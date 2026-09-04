@@ -1,0 +1,21 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Garro's Bootcamp: Build",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/FitTrack.sln"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "Garro's Bootcamp: Start",
+      "type": "shell",
+      "command": "dotnet",
+      "args": ["run", "--project", "${workspaceFolder}/Server/FitTrack.Server.csproj"],
+      "isBackground": true,
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

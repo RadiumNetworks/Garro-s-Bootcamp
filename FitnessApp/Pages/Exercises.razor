@@ -1,0 +1,189 @@
+@page "/uebungen"
+@inject FitTrackDatabaseService Database
+
+<PageTitle>Übungen verwalten</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Katalog erweitern</span>
+    <h1>Neue Übung</h1>
+    <p>Ergänze eigene Kraft-, Ausdauer- oder sonstige Übungen. Der Eintrag wird dauerhaft im JSON-Katalog gespeichert.</p>
+</header>
+
+<div class="exercise-admin-layout">
+    <EditForm Model="form" OnValidSubmit="SaveAsync" class="app-card form-card exercise-admin-form">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="validation-errors" />
+
+        <div class="form-grid">
+            <div class="field field-wide">
+                <label for="exerciseName">Name</label>
+                <InputText id="exerciseName" @bind-Value="form.Name" placeholder="z. B. Frontkniebeuge" />
+            </div>
+            <div class="field field-wide">
+                <label for="exerciseDescription">Beschreibung</label>
+                <InputTextArea id="exerciseDescription" @bind-Value="form.Description" placeholder="Kurze Beschreibung der Ausführung" />
+            </div>
+            <div class="field field-wide">
+                <label for="muscleGroups">Muskelgruppen</label>
+                <InputText id="muscleGroups" @bind-Value="form.MuscleGroups" placeholder="Beine, Gesäß, Rumpf" />
+                <small class="muted">Mehrere Muskelgruppen durch Kommas trennen.</small>
+            </div>
+            <div class="field">
+                <label for="exerciseType">Übungstyp</label>
+                <InputSelect id="exerciseType" @bind-Value="form.ExerciseType">
+                    <option value="Strength">Kraft</option>
+                    <option value="Endurance">Ausdauer</option>
+                    <option value="Other">Sonstiges</option>
+                </InputSelect>
+            </div>
+            <div class="field">
+                <label for="category">Kategorie</label>
+                <InputText id="category" @bind-Value="form.Category" placeholder="z. B. Freihantel" />
+            </div>
+            <div class="field field-wide">
+                <label for="imageUrl">Bild-URL (optional)</label>
+                <InputText id="imageUrl" @bind-Value="form.ImageUrl" placeholder="/media/Datei.png oder https://…" />
+            </div>
+        </div>
+
+        <div class="form-actions">
+            <button class="app-button btn-primary" type="submit" disabled="@saving">
+                @(saving ? "Wird gespeichert …" : "Übung speichern")
+            </button>
+            @if (saved)
+            {
+                <span class="save-message">In JSON gespeichert ✓</span>
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <p class="form-error" role="alert">@errorMessage</p>
+        }
+    </EditForm>
+
+    <aside class="app-card catalog-summary">
+        <span class="eyebrow">Aktueller Bestand</span>
+        <h2>@FilteredCatalog.Count() von @exercises.Count Übungen</h2>
+        <p class="muted">Neue Einträge stehen direkt beim Zusammenstellen eines Trainings zur Verfügung.</p>
+
+        <div class="catalog-filter-grid">
+            <label>
+                <span>Kategorie</span>
+                <select @bind="selectedCatalogCategory" aria-label="Übungsbestand nach Kategorie filtern">
+                    @foreach (var category in CatalogCategories)
+                    {
+                        <option value="@category">@category</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Muskelgruppe</span>
+                <select @bind="selectedCatalogMuscleGroup" aria-label="Übungsbestand nach Muskelgruppe filtern">
+                    @foreach (var muscleGroup in CatalogMuscleGroups)
+                    {
+                        <option value="@muscleGroup">@muscleGroup</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        <div class="catalog-summary-list">
+            @foreach (var exercise in FilteredCatalog.OrderByDescending(item => item.Id == lastSavedId).ThenBy(item => item.Name))
+            {
+                <div class="catalog-summary-item">
+                    <strong>@exercise.Name</strong>
+                    <span>@TypeLabel(exercise.ExerciseType) · @exercise.Category</span>
+                    <span>@string.Join(" · ", exercise.MuscleGroups)</span>
+                </div>
+            }
+        </div>
+    </aside>
+</div>
+
+@code {
+    private ExerciseFormModel form = new();
+    private IReadOnlyList<ExerciseDefinition> exercises = [];
+    private string selectedCatalogCategory = "Alle";
+    private string selectedCatalogMuscleGroup = "Alle";
+    private Guid? lastSavedId;
+    private bool saving;
+    private bool saved;
+    private string? errorMessage;
+
+    private IEnumerable<string> CatalogCategories =>
+        new[] { "Alle" }.Concat(exercises
+            .Select(item => item.Category)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct()
+            .Order());
+
+    private IEnumerable<string> CatalogMuscleGroups =>
+        new[] { "Alle" }.Concat(exercises
+            .SelectMany(item => item.MuscleGroups)
+            .Distinct()
+            .Order());
+
+    private IEnumerable<ExerciseDefinition> FilteredCatalog => exercises
+        .Where(item => selectedCatalogCategory == "Alle" || item.Category == selectedCatalogCategory)
+        .Where(item => selectedCatalogMuscleGroup == "Alle" || item.MuscleGroups.Contains(selectedCatalogMuscleGroup));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Database.InitializeAsync();
+        exercises = await Database.GetExercisesAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        saved = false;
+        errorMessage = null;
+
+        try
+        {
+            var muscleGroups = form.MuscleGroups
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (muscleGroups.Count == 0)
+            {
+                errorMessage = "Bitte mindestens eine gültige Muskelgruppe eingeben.";
+                return;
+            }
+
+            var exercise = new ExerciseDefinition
+            {
+                Id = Guid.NewGuid(),
+                Name = form.Name.Trim(),
+                Description = form.Description.Trim(),
+                MuscleGroup = muscleGroups[0],
+                MuscleGroups = muscleGroups,
+                ExerciseType = form.ExerciseType,
+                Category = form.Category.Trim(),
+                ImageUrl = string.IsNullOrWhiteSpace(form.ImageUrl) ? null : form.ImageUrl.Trim()
+            };
+
+            var created = await Database.AddExerciseAsync(exercise);
+            lastSavedId = created.Id;
+            exercises = await Database.GetExercisesAsync();
+            form = new ExerciseFormModel { ExerciseType = form.ExerciseType, Category = form.Category };
+            saved = true;
+        }
+        catch (Exception exception)
+        {
+            errorMessage = exception.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private static string TypeLabel(string type) => type switch
+    {
+        ExerciseTypes.Strength => "Kraft",
+        ExerciseTypes.Endurance => "Ausdauer",
+        _ => "Sonstiges"
+    };
+}

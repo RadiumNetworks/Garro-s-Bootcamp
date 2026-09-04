@@ -1,0 +1,171 @@
+@page "/benutzer"
+@inject AuthService Auth
+
+<PageTitle>Benutzerverwaltung</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Serverbetrieb</span>
+    <h1>Benutzerverwaltung</h1>
+    <p>Lege SQL-Benutzer an und vergib Rollen für persönliche und globale Trainings.</p>
+</header>
+
+@if (loading)
+{
+    <section class="app-card empty-state">Benutzerverwaltung wird geladen …</section>
+}
+else if (currentUser.AuthenticationMode == "Sql" && !currentUser.IsAuthenticated)
+{
+    <EditForm Model="login" OnValidSubmit="LoginAsync" class="app-card form-card user-management-card">
+        <DataAnnotationsValidator />
+        <span class="eyebrow">SQL-Authentifizierung</span>
+        <h2>Admin anmelden</h2>
+        <div class="form-grid">
+            <div class="field field-wide">
+                <label for="loginUserName">Benutzername</label>
+                <InputText id="loginUserName" @bind-Value="login.UserName" />
+                <ValidationMessage For="@(() => login.UserName)" />
+            </div>
+            <div class="field field-wide">
+                <label for="loginPassword">Passwort</label>
+                <InputText id="loginPassword" type="password" @bind-Value="login.Password" />
+                <ValidationMessage For="@(() => login.Password)" />
+            </div>
+        </div>
+        <button class="app-button btn-primary" type="submit">Anmelden</button>
+        @if (!string.IsNullOrWhiteSpace(message))
+        {
+            <p class="form-error" role="alert">@message</p>
+        }
+    </EditForm>
+}
+else if (!currentUser.CanManageUsers)
+{
+    <section class="app-card empty-state">
+        <h2>Kein Zugriff</h2>
+        <p>Die Benutzerverwaltung ist nur für Admins sichtbar.</p>
+    </section>
+}
+else
+{
+    <div class="user-management-layout">
+        <EditForm Model="newUser" OnValidSubmit="CreateUserAsync" class="app-card form-card user-management-card">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="validation-errors" />
+            <span class="eyebrow">@currentUser.AuthenticationMode-Modus</span>
+            <h2>Benutzer anlegen</h2>
+            <div class="form-grid">
+                <div class="field field-wide">
+                    <label for="newUserName">Benutzername</label>
+                    <InputText id="newUserName" @bind-Value="newUser.UserName" />
+                </div>
+                <div class="field field-wide">
+                    <label for="newPassword">Initiales Passwort</label>
+                    <InputText id="newPassword" type="password" @bind-Value="newUser.Password" />
+                </div>
+                <div class="field field-wide">
+                    <label for="newRole">Rolle</label>
+                    <InputSelect id="newRole" @bind-Value="newUser.Role">
+                        <option value="User">User</option>
+                        <option value="Admin">Admin</option>
+                    </InputSelect>
+                </div>
+            </div>
+            <button class="app-button btn-primary" type="submit" disabled="@saving">@(saving ? "Wird gespeichert …" : "Benutzer speichern")</button>
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <p class="form-error" role="status">@message</p>
+            }
+        </EditForm>
+
+        <section class="app-card user-list-card">
+            <div class="section-heading">
+                <div>
+                    <span class="eyebrow">SQL-Benutzer</span>
+                    <h2>@users.Count Benutzer</h2>
+                </div>
+                @if (currentUser.AuthenticationMode == "Sql")
+                {
+                    <button type="button" class="app-button secondary" @onclick="LogoutAsync">Abmelden</button>
+                }
+            </div>
+            <div class="user-list">
+                @foreach (var user in users)
+                {
+                    <article class="user-list-item">
+                        <div>
+                            <strong>@user.UserName</strong>
+                            <span>@user.Role · erstellt @user.CreatedAt.ToString("dd.MM.yyyy")</span>
+                        </div>
+                        @if (user.IsDisabled)
+                        {
+                            <span class="chip">gesperrt</span>
+                        }
+                    </article>
+                }
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private CurrentUserState currentUser = new();
+    private IReadOnlyList<UserAccount> users = [];
+    private LoginModel login = new();
+    private CreateUserModel newUser = new() { Role = "Admin" };
+    private bool loading = true;
+    private bool saving;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await Auth.GetCurrentUserAsync();
+        if (currentUser.CanManageUsers)
+        {
+            users = await Auth.GetUsersAsync();
+        }
+
+        loading = false;
+    }
+
+    private async Task LoginAsync()
+    {
+        message = null;
+        var result = await Auth.LoginAsync(login);
+        if (result is null)
+        {
+            message = "Anmeldung fehlgeschlagen.";
+            return;
+        }
+
+        currentUser = result;
+        users = await Auth.GetUsersAsync();
+    }
+
+    private async Task LogoutAsync()
+    {
+        await Auth.LogoutAsync();
+        currentUser = await Auth.GetCurrentUserAsync();
+        users = [];
+    }
+
+    private async Task CreateUserAsync()
+    {
+        saving = true;
+        message = null;
+        try
+        {
+            await Auth.CreateUserAsync(newUser);
+            users = await Auth.GetUsersAsync();
+            message = $"Benutzer „{newUser.UserName.Trim()}“ wurde angelegt.";
+            newUser = new CreateUserModel { Role = "User" };
+        }
+        catch (Exception exception)
+        {
+            message = exception.Message;
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+}

@@ -1,0 +1,142 @@
+@page "/fortschritt"
+@inject WorkoutService Workouts
+
+<PageTitle>Fortschritt</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Deine Entwicklung</span>
+    <h1>Fortschritt</h1>
+    <p>Verfolge Gewicht, Trainingsvolumen und deine Ausdauerleistung je Übung.</p>
+</header>
+
+@if (items is null)
+{
+    <section class="app-card progress-empty">Fortschrittsdaten werden geladen …</section>
+}
+else
+{
+    <div class="stats-grid">
+        <article class="stat-card"><span>Einheiten gesamt</span><strong>@items.Count</strong></article>
+        <article class="stat-card"><span>Trainingszeit</span><strong>@TotalHours.ToString("0.0") h</strong></article>
+        <article class="stat-card"><span>Aktive Wochen</span><strong>@ActiveWeeks</strong></article>
+    </div>
+
+    @if (AvailableExercises.Count == 0)
+    {
+        <section class="app-card progress-empty">Noch keine Übungsdaten für eine Auswertung vorhanden.</section>
+    }
+    else
+    {
+        <section class="app-card progress-picker">
+            <div>
+                <span class="eyebrow">Übungsanalyse</span>
+                <h2>Verlauf einer Übung</h2>
+            </div>
+            <div class="field">
+                <label for="progress-exercise">Übung auswählen</label>
+                <select id="progress-exercise" value="@selectedExerciseId" @onchange="SelectExercise">
+                    @foreach (var exercise in AvailableExercises)
+                    {
+                        <option value="@exercise.Id">@exercise.Name</option>
+                    }
+                </select>
+            </div>
+        </section>
+
+        @if (SelectedExercise is not null)
+        {
+            @if (SelectedExercise.ExerciseType == ExerciseTypes.Endurance)
+            {
+                <div class="exercise-progress-summary">
+                    <article class="app-card progress-metric"><span>Größte Distanz</span><strong>@EndurancePoints.Max(point => point.DistanceKm).ToString("0.##") km</strong></article>
+                    <article class="app-card progress-metric"><span>Längste Dauer</span><strong>@EndurancePoints.Max(point => point.DurationMinutes) Min.</strong></article>
+                    <article class="app-card progress-metric"><span>Letzte Belastung</span><strong>@EndurancePoints.Last().Difficulty/10</strong></article>
+                </div>
+                <div class="exercise-chart-grid">
+                    <ExerciseLineChart Title="Distanz" Unit="km" Values="@EndurancePoints.Select(point => new ChartValue(point.Date, point.DistanceKm)).ToList()" />
+                    <ExerciseLineChart Title="Dauer" Unit="Min." Values="@EndurancePoints.Select(point => new ChartValue(point.Date, point.DurationMinutes)).ToList()" Secondary="true" />
+                </div>
+            }
+            else if (SelectedExercise.ExerciseType == ExerciseTypes.Other)
+            {
+                <div class="exercise-progress-summary">
+                    <article class="app-card progress-metric"><span>Längste Dauer</span><strong>@OtherPoints.Max(point => point.DurationMinutes) Min.</strong></article>
+                    <article class="app-card progress-metric"><span>Letzte Intensität</span><strong>@OtherPoints.Last().Difficulty/10</strong></article>
+                    <article class="app-card progress-metric"><span>Erfasste Aktivitäten</span><strong>@OtherPoints.Count</strong></article>
+                </div>
+                <div class="exercise-chart-grid">
+                    <ExerciseLineChart Title="Dauer" Unit="Min." Values="@OtherPoints.Select(point => new ChartValue(point.Date, point.DurationMinutes)).ToList()" />
+                    <ExerciseLineChart Title="Intensität" Unit="/ 10" Values="@OtherPoints.Select(point => new ChartValue(point.Date, point.Difficulty)).ToList()" Secondary="true" />
+                </div>
+            }
+            else
+            {
+                <div class="exercise-progress-summary">
+                    <article class="app-card progress-metric"><span>Maximales Gewicht</span><strong>@StrengthPoints.Max(point => point.MaxWeight).ToString("0.##") kg</strong></article>
+                    <article class="app-card progress-metric"><span>Höchstes Gesamtvolumen</span><strong>@StrengthPoints.Max(point => point.Volume).ToString("0") kg</strong></article>
+                    <article class="app-card progress-metric"><span>Erfasste Einheiten</span><strong>@StrengthPoints.Count</strong></article>
+                </div>
+                <div class="exercise-chart-grid">
+                    <ExerciseLineChart Title="Maximales Gewicht" Unit="kg" Values="@StrengthPoints.Select(point => new ChartValue(point.Date, point.MaxWeight)).ToList()" />
+                    <ExerciseLineChart Title="Gesamtvolumen" Unit="kg" Values="@StrengthPoints.Select(point => new ChartValue(point.Date, point.Volume)).ToList()" Secondary="true" />
+                </div>
+            }
+        }
+    }
+}
+
+@code {
+    private IReadOnlyList<WorkoutSession>? items;
+    private string selectedExerciseId = string.Empty;
+    private double TotalHours => (items?.Sum(item => item.DurationMinutes) ?? 0) / 60d;
+    private int ActiveWeeks => items?.Select(item => $"{item.PerformedAt.Year}-{System.Globalization.ISOWeek.GetWeekOfYear(item.PerformedAt)}").Distinct().Count() ?? 0;
+
+    private List<ExerciseOption> AvailableExercises => items?
+        .SelectMany(workout => workout.Exercises)
+        .Where(exercise => exercise.ExerciseId != Guid.Empty)
+        .GroupBy(exercise => exercise.ExerciseId)
+        .Select(group => new ExerciseOption(group.Key, group.First().Name, group.First().ExerciseType))
+        .OrderBy(exercise => exercise.Name)
+        .ToList() ?? [];
+
+    private ExerciseOption? SelectedExercise => AvailableExercises.FirstOrDefault(exercise => exercise.Id.ToString() == selectedExerciseId);
+
+    private List<StrengthPoint> StrengthPoints => items?
+        .OrderBy(workout => workout.PerformedAt)
+        .SelectMany(workout => workout.Exercises
+            .Where(exercise => exercise.ExerciseId.ToString() == selectedExerciseId)
+            .Select(exercise => new StrengthPoint(
+                workout.PerformedAt,
+                exercise.SetEntries.Count > 0 ? exercise.SetEntries.Max(set => set.WeightKg) : exercise.WeightKg,
+                exercise.SetEntries.Count > 0
+                    ? exercise.SetEntries.Sum(set => set.WeightKg * set.Repetitions)
+                    : exercise.WeightKg * exercise.Repetitions * exercise.Sets)))
+        .ToList() ?? [];
+
+    private List<EndurancePoint> EndurancePoints => items?
+        .OrderBy(workout => workout.PerformedAt)
+        .SelectMany(workout => workout.Exercises
+            .Where(exercise => exercise.ExerciseId.ToString() == selectedExerciseId)
+            .Select(exercise => new EndurancePoint(workout.PerformedAt, exercise.DistanceKm, exercise.DurationMinutes, exercise.Difficulty)))
+        .ToList() ?? [];
+
+    private List<OtherPoint> OtherPoints => items?
+        .OrderBy(workout => workout.PerformedAt)
+        .SelectMany(workout => workout.Exercises
+            .Where(exercise => exercise.ExerciseId.ToString() == selectedExerciseId)
+            .Select(exercise => new OtherPoint(workout.PerformedAt, exercise.DurationMinutes, exercise.Difficulty)))
+        .ToList() ?? [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        items = await Workouts.GetAllAsync();
+        selectedExerciseId = AvailableExercises.FirstOrDefault()?.Id.ToString() ?? string.Empty;
+    }
+
+    private void SelectExercise(ChangeEventArgs args) => selectedExerciseId = args.Value?.ToString() ?? string.Empty;
+
+    private sealed record ExerciseOption(Guid Id, string Name, string ExerciseType);
+    private sealed record StrengthPoint(DateTime Date, decimal MaxWeight, decimal Volume);
+    private sealed record EndurancePoint(DateTime Date, decimal DistanceKm, int DurationMinutes, int Difficulty);
+    private sealed record OtherPoint(DateTime Date, int DurationMinutes, int Difficulty);
+}

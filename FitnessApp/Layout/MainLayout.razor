@@ -1,0 +1,91 @@
+﻿@inherits LayoutComponentBase
+@inject AuthService Auth
+@inject NavigationManager Navigation
+
+<div class="page @(HideNavigation ? "login-page" : null)">
+    @if (!HideNavigation)
+    {
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+    }
+
+    <main>
+        <article class="content px-4">
+            @if (loadingAuth)
+            {
+                <section class="app-card empty-state">Anmeldestatus wird geprüft …</section>
+            }
+            else if (RequiresLogin)
+            {
+                <EditForm Model="login" OnValidSubmit="LoginAsync" class="app-card form-card auth-gate-card">
+                    <DataAnnotationsValidator />
+                    <span class="eyebrow">SQL-Authentifizierung</span>
+                    <h1>Anmelden</h1>
+                    <p>Bitte melde dich an, um Garro's Bootcamp zu verwenden.</p>
+                    <div class="form-grid">
+                        <div class="field field-wide">
+                            <label for="gateUserName">Benutzername</label>
+                            <InputText id="gateUserName" @bind-Value="login.UserName" autocomplete="username" />
+                            <ValidationMessage For="@(() => login.UserName)" />
+                        </div>
+                        <div class="field field-wide">
+                            <label for="gatePassword">Passwort</label>
+                            <InputText id="gatePassword" type="password" @bind-Value="login.Password" autocomplete="current-password" />
+                            <ValidationMessage For="@(() => login.Password)" />
+                        </div>
+                    </div>
+                    <button class="app-button btn-primary" type="submit" disabled="@loggingIn">@(loggingIn ? "Wird angemeldet …" : "Anmelden")</button>
+                    @if (!string.IsNullOrWhiteSpace(loginError))
+                    {
+                        <p class="form-error" role="alert">@loginError</p>
+                    }
+                </EditForm>
+            }
+            else
+            {
+                @Body
+            }
+        </article>
+    </main>
+</div>
+
+@code {
+    private CurrentUserState currentUser = new();
+    private LoginModel login = new();
+    private bool loadingAuth = true;
+    private bool loggingIn;
+    private string? loginError;
+
+    private bool IsLoginRoute => Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].Trim('/').Equals("benutzer", StringComparison.OrdinalIgnoreCase);
+    private bool RequiresLogin => currentUser.AuthenticationMode == "Sql" && !currentUser.IsAuthenticated && !IsLoginRoute;
+    private bool HideNavigation => currentUser.AuthenticationMode == "Sql" && !currentUser.IsAuthenticated;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await Auth.GetCurrentUserAsync();
+        loadingAuth = false;
+    }
+
+    private async Task LoginAsync()
+    {
+        loggingIn = true;
+        loginError = null;
+        try
+        {
+            var result = await Auth.LoginAsync(login);
+            if (result is null)
+            {
+                loginError = "Anmeldung fehlgeschlagen.";
+                return;
+            }
+
+            currentUser = result;
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+        }
+        finally
+        {
+            loggingIn = false;
+        }
+    }
+}

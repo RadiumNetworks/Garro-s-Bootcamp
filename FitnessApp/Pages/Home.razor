@@ -1,0 +1,190 @@
+﻿@page "/"
+@inject WorkoutService Workouts
+@inject SettingsService SettingsStore
+@inject AuthService Auth
+
+<PageTitle>Garro's Bootcamp – Übersicht</PageTitle>
+
+<header class="hero">
+	<div>
+		<span class="eyebrow">@DateTime.Today.ToString("dddd, dd. MMMM", GermanCulture)</span>
+		<h1>Hallo, @displayName!</h1>
+		<p>Bereit, heute stärker zu werden?</p>
+	</div>
+	<a class="app-button btn-primary" href="training">＋ Training starten</a>
+</header>
+
+@if (items is null)
+{
+	<p class="muted">Deine Übersicht wird geladen …</p>
+}
+else
+{
+	<div class="stats-grid dashboard-stats">
+		<article class="stat-card accent">
+			<span>Diese Woche</span>
+			<strong>@ThisWeekCount / @weeklyGoal</strong>
+			<small>@GoalPercent% des Wochenziels</small>
+		</article>
+		<article class="stat-card">
+			<span>Trainingszeit</span>
+			<strong>@ThisWeekMinutes</strong>
+			<small>Minuten diese Woche</small>
+		</article>
+		<article class="stat-card">
+			<span>Serie</span>
+			<strong>@CurrentStreak</strong>
+			<small>aktive Tage</small>
+		</article>
+	</div>
+
+	<section class="app-card activity-calendar-card">
+		<div class="calendar-heading">
+			<div>
+				<span class="eyebrow">Monatsübersicht</span>
+				<h2>@MonthTitle</h2>
+			</div>
+			<div class="calendar-navigation">
+				<button type="button" aria-label="Vorheriger Monat" @onclick="PreviousMonth">‹</button>
+				<button type="button" class="calendar-today" @onclick="CurrentMonth">Heute</button>
+				<button type="button" aria-label="Nächster Monat" @onclick="NextMonth">›</button>
+			</div>
+		</div>
+		<div class="month-calendar" aria-label="Trainingskalender für @MonthTitle">
+			@foreach (var weekday in Weekdays)
+			{
+				<span class="calendar-weekday">@weekday</span>
+			}
+			@foreach (var day in CalendarDays)
+			{
+				@if (day is null)
+				{
+					<span class="calendar-day empty" aria-hidden="true"></span>
+				}
+				else
+				{
+					<div class="calendar-day @(day.ExerciseCount > 0 ? "active" : null) @(day.Date == DateTime.Today ? "today" : null)"
+						 title="@CalendarDayTitle(day)">
+						<span>@day.Date.Day</span>
+						@if (day.ExerciseCount > 0)
+						{
+							<strong>@day.ExerciseCount</strong>
+							<small>Üb.</small>
+						}
+					</div>
+				}
+			}
+		</div>
+	</section>
+
+	<section class="app-card year-activity-card">
+		<div class="section-heading year-heading">
+			<div><span class="eyebrow">@DateTime.Today.Year im Überblick</span><h2>Aktivität im Jahresverlauf</h2></div>
+			<span class="year-total">@YearActiveDays aktive Tage</span>
+		</div>
+		<div class="year-timeline-scroll">
+			<div class="year-month-labels" aria-hidden="true">
+				@foreach (var month in YearMonthLabels)
+				{
+					<span>@month</span>
+				}
+			</div>
+			<div class="year-timeline" aria-label="Aktivität an jedem Tag im Jahr @DateTime.Today.Year">
+				@foreach (var day in YearDays)
+				{
+					<span class="year-day level-@day.Level" title="@YearDayTitle(day)"></span>
+				}
+			</div>
+		</div>
+		<div class="timeline-legend"><span>Weniger</span><i class="level-0"></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i><span>Mehr</span></div>
+	</section>
+
+}
+
+@code {
+	private IReadOnlyList<WorkoutSession>? items;
+	private string displayName = "Sportler";
+	private CurrentUserState currentUser = new();
+	private int weeklyGoal = 3;
+	private DateTime visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+	private static readonly string[] Weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+	private static readonly System.Globalization.CultureInfo GermanCulture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
+	private DateTime WeekStart => DateTime.Today.AddDays(-((7 + (int)DateTime.Today.DayOfWeek - (int)DayOfWeek.Monday) % 7));
+	private IEnumerable<WorkoutSession> VisibleItems => items?.Where(CanSeeWorkout) ?? [];
+	private int ThisWeekCount => VisibleItems.Count(item => item.PerformedAt.Date >= WeekStart);
+	private int ThisWeekMinutes => VisibleItems.Where(item => item.PerformedAt.Date >= WeekStart).Sum(item => item.DurationMinutes);
+	private int GoalPercent => Math.Min(100, ThisWeekCount * 100 / Math.Max(1, weeklyGoal));
+	private int CurrentStreak => VisibleItems.Select(item => item.PerformedAt.Date).Distinct().OrderDescending().TakeWhile((date, index) => date >= DateTime.Today.AddDays(-index - 1)).Count();
+	private string MonthTitle => visibleMonth.ToString("MMMM yyyy", GermanCulture);
+	private int YearActiveDays => VisibleItems.Where(item => item.PerformedAt.Year == DateTime.Today.Year).Select(item => item.PerformedAt.Date).Distinct().Count();
+	private IEnumerable<string> YearMonthLabels => Enumerable.Range(1, 12).Select(month => new DateTime(DateTime.Today.Year, month, 1).ToString("MMM", GermanCulture));
+
+	private IReadOnlyList<CalendarDay?> CalendarDays
+	{
+		get
+		{
+			var leadingDays = ((int)visibleMonth.DayOfWeek + 6) % 7;
+			var days = Enumerable.Repeat<CalendarDay?>(null, leadingDays).ToList();
+			days.AddRange(Enumerable.Range(1, DateTime.DaysInMonth(visibleMonth.Year, visibleMonth.Month))
+				.Select(day => new DateTime(visibleMonth.Year, visibleMonth.Month, day))
+				.Select(date => new CalendarDay(date, ExerciseCount(date))));
+			while (days.Count % 7 != 0)
+			{
+				days.Add(null);
+			}
+			return days;
+		}
+	}
+
+	private IReadOnlyList<YearDay> YearDays => Enumerable.Range(0, DateTime.IsLeapYear(DateTime.Today.Year) ? 366 : 365)
+		.Select(offset => new DateTime(DateTime.Today.Year, 1, 1).AddDays(offset))
+		.Select(date => new YearDay(date, ExerciseCount(date)))
+		.ToList();
+
+	private int ExerciseCount(DateTime date) => VisibleItems
+		.Where(workout => workout.PerformedAt.Date == date.Date)
+		.Sum(workout => workout.Exercises.Count);
+
+	private bool CanSeeWorkout(WorkoutSession workout)
+	{
+		if (workout.Visibility == WorkoutVisibility.Global)
+		{
+			return true;
+		}
+
+		if (currentUser.AuthenticationMode != "Sql" || !currentUser.IsAuthenticated)
+		{
+			return true;
+		}
+
+		return string.Equals(workout.OwnerUserName, currentUser.UserName, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static string CalendarDayTitle(CalendarDay day) => day.ExerciseCount == 0
+		? $"{day.Date:dd.MM.yyyy}: keine Aktivität"
+		: $"{day.Date:dd.MM.yyyy}: {day.ExerciseCount} Übung(en)";
+
+	private static string YearDayTitle(YearDay day) => day.ExerciseCount == 0
+		? $"{day.Date:dd.MM.yyyy}: keine Aktivität"
+		: $"{day.Date:dd.MM.yyyy}: {day.ExerciseCount} Übung(en)";
+
+	private void PreviousMonth() => visibleMonth = visibleMonth.AddMonths(-1);
+	private void NextMonth() => visibleMonth = visibleMonth.AddMonths(1);
+	private void CurrentMonth() => visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+	protected override async Task OnInitializedAsync()
+	{
+		items = await Workouts.GetAllAsync();
+		var settings = await SettingsStore.GetAsync();
+		currentUser = await Auth.GetCurrentUserAsync();
+		displayName = currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated
+			? currentUser.DisplayName ?? currentUser.UserName ?? settings.DisplayName
+			: settings.DisplayName;
+		weeklyGoal = settings.WeeklyGoal;
+	}
+
+	private sealed record CalendarDay(DateTime Date, int ExerciseCount);
+	private sealed record YearDay(DateTime Date, int ExerciseCount)
+	{
+		public int Level => ExerciseCount switch { 0 => 0, 1 => 1, 2 => 2, <= 4 => 3, _ => 4 };
+	}
+}

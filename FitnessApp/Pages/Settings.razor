@@ -1,0 +1,73 @@
+@page "/einstellungen"
+@inject SettingsService SettingsStore
+@inject WorkoutService Workouts
+@inject AuthService Auth
+
+<PageTitle>Einstellungen</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Garro's Bootcamp anpassen</span>
+    <h1>Einstellungen</h1>
+    <p>Trainingsdaten und Einstellungen bleiben lokal gespeichert; im SQL-Modus wird dein Anzeigename im Benutzerkonto abgelegt.</p>
+</header>
+
+<EditForm Model="settings" OnValidSubmit="SaveAsync" class="app-card form-card">
+    <DataAnnotationsValidator />
+    <div class="form-grid">
+        <div class="field field-wide">
+            <label for="displayName">Anzeigename</label>
+            <InputText id="displayName" @bind-Value="settings.DisplayName" />
+            <ValidationMessage For="@(() => settings.DisplayName)" />
+        </div>
+        <div class="field field-wide">
+            <label for="goal">Trainingsziel pro Woche</label>
+            <InputNumber id="goal" @bind-Value="settings.WeeklyGoal" />
+            <ValidationMessage For="@(() => settings.WeeklyGoal)" />
+        </div>
+    </div>
+    <button class="app-button btn-primary" type="submit">Einstellungen speichern</button>
+    @if (saved)
+    {
+        <span class="save-message">Gespeichert ✓</span>
+    }
+</EditForm>
+
+<section class="app-card danger-zone">
+    <div>
+        <h2>Beispieldaten wiederherstellen</h2>
+        <p>Alle eigenen Trainingseinträge werden durch die Demo-Einträge ersetzt.</p>
+    </div>
+    <button class="app-button secondary" @onclick="ResetAsync">Zurücksetzen</button>
+</section>
+
+@code {
+    private UserSettings settings = new();
+    private CurrentUserState currentUser = new();
+    private bool saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = await SettingsStore.GetAsync();
+        currentUser = await Auth.GetCurrentUserAsync();
+        if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+        {
+            settings.DisplayName = string.IsNullOrWhiteSpace(currentUser.DisplayName) ? currentUser.UserName ?? settings.DisplayName : currentUser.DisplayName;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        await SettingsStore.SaveAsync(settings);
+        if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+        {
+            await Auth.UpdateDisplayNameAsync(settings.DisplayName.Trim());
+        }
+        saved = true;
+    }
+
+    private async Task ResetAsync()
+    {
+        await Workouts.ResetAsync();
+        saved = true;
+    }
+}

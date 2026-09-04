@@ -1,0 +1,578 @@
+@page "/training"
+@inject WorkoutService Workouts
+@inject FitTrackDatabaseService Database
+@inject NavigationManager Navigation
+@inject AuthService Auth
+
+<PageTitle>Training zusammenstellen</PageTitle>
+
+<header class="page-header training-header">
+    <div>
+        <span class="eyebrow">Trainingsplaner</span>
+        <h1>Training zusammenstellen</h1>
+        <p>Filtere Übungen und ziehe sie in dein Training. Auf Mobilgeräten kannst du auch auf <strong>Hinzufügen</strong> tippen.</p>
+    </div>
+    <div class="training-header-actions">
+        <div class="exercise-count" aria-label="Anzahl ausgewählter Übungen">
+            <strong>@selectedExercises.Count</strong>
+            <span>Übungen</span>
+        </div>
+        <button type="button" class="app-button library-toggle" @onclick="ToggleLibrary" aria-expanded="@libraryOpen" aria-controls="exercise-library">
+            <span aria-hidden="true">@(libraryOpen ? "×" : "+")</span>
+            @(libraryOpen ? "Auswahl schließen" : "Übungen auswählen")
+        </button>
+    </div>
+</header>
+
+<section class="app-card saved-workout-picker">
+    <div>
+        <span class="eyebrow">Gespeicherte Trainings</span>
+        <h2>Training wiederverwenden</h2>
+        <p>Wähle ein gespeichertes Training, lade es in dein Dashboard und passe es vor dem erneuten Speichern an.</p>
+    </div>
+    <div class="saved-workout-controls">
+        <label for="savedWorkout">Training auswählen</label>
+        <select id="savedWorkout" @bind="selectedWorkoutId" disabled="@(savedWorkouts.Count == 0)">
+            <option value="">@(savedWorkouts.Count == 0 ? "Noch keine Trainings gespeichert" : "Bitte auswählen")</option>
+            @foreach (var workout in savedWorkouts)
+            {
+                <option value="@workout.Id">@workout.PerformedAt.ToString("dd.MM.yyyy") · @workout.Name (@workout.Exercises.Count Üb.)</option>
+            }
+        </select>
+        <div class="saved-workout-actions">
+            <button type="button" class="app-button secondary" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="LoadSelectedWorkoutAsync">Training laden</button>
+            <button type="button" class="app-button danger" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="DeleteSelectedWorkoutAsync">Training löschen</button>
+        </div>
+    </div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(loadMessage))
+{
+    <p class="save-message training-load-message">@loadMessage</p>
+}
+
+@if (loading)
+{
+    <section class="app-card empty-state">
+        <div class="empty-icon">↻</div>
+        <h2>Übungen werden geladen</h2>
+    </section>
+}
+else
+{
+    <div class="training-builder @(libraryOpen ? "library-open" : null)">
+        <aside id="exercise-library" class="exercise-library app-card @(libraryOpen ? "open" : null)" aria-labelledby="exercise-library-title" aria-hidden="@(!libraryOpen)">
+            <div class="section-heading builder-heading">
+                <div>
+                    <span class="eyebrow">Übungsdatenbank</span>
+                    <h2 id="exercise-library-title">Übungen</h2>
+                </div>
+                <div class="library-heading-actions">
+                    <span class="result-count">@FilteredExercises.Count() Treffer</span>
+                    <button type="button" class="sidebar-close" aria-label="Übungsauswahl schließen" @onclick="ToggleLibrary">×</button>
+                </div>
+            </div>
+
+            <div class="exercise-filters">
+                <div class="filter-group">
+                    <span class="filter-label">Übungstyp</span>
+                    <div class="muscle-filters" role="group" aria-label="Nach Übungstyp filtern">
+                        @foreach (var category in Categories)
+                        {
+                            <button type="button"
+                                    class="filter-chip @(selectedCategory == category ? "active" : null)"
+                                    aria-pressed="@(selectedCategory == category)"
+                                    @onclick="() => selectedCategory = category">
+                                @category
+                            </button>
+                        }
+                    </div>
+                </div>
+                <div class="filter-group">
+                    <span class="filter-label">Muskelgruppe</span>
+                    <div class="muscle-filters" role="group" aria-label="Nach Muskelgruppe filtern">
+                        @foreach (var group in MuscleGroups)
+                        {
+                            <button type="button"
+                                    class="filter-chip @(selectedMuscleGroup == group ? "active" : null)"
+                                    aria-pressed="@(selectedMuscleGroup == group)"
+                                    @onclick="() => selectedMuscleGroup = group">
+                                @group
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="exercise-grid">
+                @foreach (var exercise in FilteredExercises)
+                {
+                    var isSelected = selectedExercises.Any(item => item.ExerciseId == exercise.Id);
+                    <article class="exercise-card @(isSelected ? "selected" : null)"
+                             draggable="true"
+                             data-exercise-id="@exercise.Id">
+                        <div class="exercise-card-top">
+                            <span class="muscle-badge">@exercise.Category</span>
+                            <span class="drag-handle" aria-hidden="true">⠿</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(exercise.ImageUrl))
+                        {
+                            <img class="exercise-card-image" src="@exercise.ImageUrl" alt="@exercise.Name" loading="lazy" />
+                        }
+                        <h3>@exercise.Name</h3>
+                        <p>@exercise.Description</p>
+                        <small class="exercise-muscles">@string.Join(" · ", exercise.MuscleGroups)</small>
+                        <button type="button"
+                                class="add-exercise-button"
+                                data-add-exercise-id="@exercise.Id"
+                                disabled="@isSelected"
+                                @onclick="() => AddExercise(exercise)">
+                            @(isSelected ? "Im Training" : "+ Hinzufügen")
+                        </button>
+                    </article>
+                }
+            </div>
+        </aside>
+
+        <EditForm Model="model" OnValidSubmit="SaveAsync" class="workout-dashboard app-card">
+            <DataAnnotationsValidator />
+
+            <div class="dashboard-title">
+                <div>
+                    <span class="eyebrow">Dein Dashboard</span>
+                    <h2>Aktuelles Training</h2>
+                </div>
+                @if (selectedExercises.Count > 0)
+                {
+                    <button type="button" class="clear-button" @onclick="ClearExercises">Leeren</button>
+                }
+            </div>
+
+            <div class="compact-form-grid">
+                <div class="field field-wide">
+                    <label for="name">Name des Trainings</label>
+                    <InputText id="name" @bind-Value="model.Name" placeholder="z. B. Oberkörper" />
+                    <ValidationMessage For="@(() => model.Name)" />
+                </div>
+                <div class="field">
+                    <label for="date">Datum</label>
+                    <InputDate id="date" @bind-Value="model.PerformedAt" />
+                </div>
+                <div class="field">
+                    <label for="duration">Dauer (Min.)</label>
+                    <InputNumber id="duration" @bind-Value="model.DurationMinutes" />
+                    <ValidationMessage For="@(() => model.DurationMinutes)" />
+                </div>
+                @if (currentUser.CanManageUsers)
+                {
+                    <label class="visibility-toggle field-wide">
+                        <InputCheckbox @bind-Value="saveAsGlobal" />
+                        <span>
+                            <strong>Global sichtbar</strong>
+                            <small>Dieses Training steht allen Nutzern als Vorlage zur Verfügung.</small>
+                        </span>
+                    </label>
+                }
+            </div>
+
+            <div class="exercise-dropzone @(selectedExercises.Count > 0 ? "has-items" : null)"
+                  data-workout-dropzone>
+                @if (selectedExercises.Count == 0)
+                {
+                    <div class="dropzone-empty">
+                        <span class="drop-icon">＋</span>
+                        <strong>Übungen hier ablegen</strong>
+                        <small>Ziehe eine Karte aus der Übungsdatenbank hierher.</small>
+                    </div>
+                }
+                else
+                {
+                    <div class="selected-exercise-list">
+                        @for (var index = 0; index < selectedExercises.Count; index++)
+                        {
+                            var item = selectedExercises[index];
+                            var itemNumber = index + 1;
+                            <article class="selected-exercise">
+                                <div class="selected-exercise-heading @(string.IsNullOrWhiteSpace(item.ImageUrl) ? "without-image" : null)">
+                                    <span class="exercise-number">@itemNumber</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
+                                    {
+                                        <button type="button" class="selected-exercise-image-button" aria-label="@item.Name vergrößern" @onclick="() => TogglePreview(item)">
+                                            <img class="selected-exercise-image" src="@item.ImageUrl" alt="@item.Name" loading="lazy" />
+                                        </button>
+                                    }
+                                    <div>
+                                        <h3>@item.Name</h3>
+                                        <span>@TypeLabel(item)</span>
+                                    </div>
+                                    <button type="button" class="remove-exercise" aria-label="@item.Name entfernen" @onclick="() => RemoveExercise(item)">×</button>
+                                </div>
+                                @if (IsDistanceEndurance(item))
+                                {
+                                    <div class="endurance-editor">
+                                        <label>
+                                            <span>Dauer (Min.)</span>
+                                            <InputNumber @bind-Value="item.DurationMinutes" min="1" max="1440" />
+                                        </label>
+                                        <label>
+                                            <span>Entfernung (km)</span>
+                                            <InputNumber @bind-Value="item.DistanceKm" min="0" max="10000" step="0.01" />
+                                        </label>
+                                        <label>
+                                            <span>Höhenmeter (optional)</span>
+                                            <InputNumber @bind-Value="item.ElevationMeters" min="0" max="100000" />
+                                        </label>
+                                        <label class="difficulty-control">
+                                            <span>Belastung <strong>@item.Difficulty/10</strong></span>
+                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Belastung für @item.Name" />
+                                            <small>@DifficultyLabel(item.Difficulty)</small>
+                                        </label>
+                                    </div>
+                                }
+                                else if (UsesDuration(item))
+                                {
+                                    <div class="other-activity-editor">
+                                        <label>
+                                            <span>Dauer (Min.)</span>
+                                            <InputNumber @bind-Value="item.DurationMinutes" min="1" max="1440" />
+                                        </label>
+                                        <label class="difficulty-control">
+                                            <span>Intensität <strong>@item.Difficulty/10</strong></span>
+                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Intensität für @item.Name" />
+                                            <small>@DifficultyLabel(item.Difficulty)</small>
+                                        </label>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="set-editor">
+                                    <div class="set-editor-header">
+                                        <strong>Sätze</strong>
+                                        <button type="button" class="add-set-button" @onclick="() => AddSet(item)">+ Satz</button>
+                                    </div>
+                                    @for (var setIndex = 0; setIndex < item.SetEntries.Count; setIndex++)
+                                    {
+                                        var set = item.SetEntries[setIndex];
+                                        var setNumber = setIndex + 1;
+                                        <div class="set-row" @key="set">
+                                            <strong class="set-number">@setNumber</strong>
+                                            <label>
+                                                <span>Wiederholungen</span>
+                                                <InputNumber @bind-Value="set.Repetitions" min="1" max="100" />
+                                            </label>
+                                            <label>
+                                                <span>Gewicht (kg)</span>
+                                                <InputNumber @bind-Value="set.WeightKg" min="0" max="1000" step="0.5" />
+                                            </label>
+                                            <label class="difficulty-control">
+                                                <span>Belastung <strong>@set.Difficulty/10</strong></span>
+                                                <input type="range" @bind="set.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Belastung für Satz @setNumber" />
+                                                <small>@DifficultyLabel(set.Difficulty)</small>
+                                            </label>
+                                            <button type="button" class="remove-set-button" disabled="@(item.SetEntries.Count == 1)" aria-label="Satz @setNumber entfernen" @onclick="() => RemoveSet(item, set)">×</button>
+                                        </div>
+                                    }
+                                    </div>
+                                }
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (showExerciseError)
+            {
+                <p class="builder-error" role="alert">Bitte prüfe die Übungsauswahl und Eingabewerte.</p>
+            }
+
+            <div class="field notes-field">
+                <label for="notes">Notizen</label>
+                <InputTextArea id="notes" @bind-Value="model.Notes" placeholder="Wie hat es sich angefühlt?" />
+            </div>
+
+            <button class="btn-primary app-button save-workout" type="submit" disabled="@saving">
+                @(saving ? "Wird gespeichert …" : "Training speichern")
+            </button>
+        </EditForm>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(expandedPreviewUrl))
+    {
+        <button type="button" class="image-lightbox" aria-label="Bild schließen" @onclick="ClosePreview">
+            <img src="@expandedPreviewUrl" alt="@expandedPreviewAlt" />
+        </button>
+    }
+}
+
+@code {
+    private readonly WorkoutFormModel model = new();
+    private readonly List<ExerciseEntry> selectedExercises = [];
+    private IReadOnlyList<ExerciseDefinition> exercises = [];
+    private IReadOnlyList<WorkoutSession> savedWorkouts = [];
+    private CurrentUserState currentUser = new();
+    private string selectedCategory = "Alle";
+    private string selectedMuscleGroup = "Alle";
+    private string selectedWorkoutId = string.Empty;
+    private string? loadMessage;
+    private bool saveAsGlobal;
+    private bool libraryOpen;
+    private bool loading = true;
+    private bool saving;
+    private bool showExerciseError;
+    private string? expandedPreviewUrl;
+    private string expandedPreviewAlt = string.Empty;
+
+    private IEnumerable<string> Categories =>
+        new[] { "Alle" }.Concat(exercises.Select(item => item.Category).Where(item => !string.IsNullOrWhiteSpace(item)).Distinct().Order());
+
+    private IEnumerable<string> MuscleGroups =>
+        new[] { "Alle" }.Concat(exercises.SelectMany(item => item.MuscleGroups).Distinct().Order());
+
+    private IEnumerable<ExerciseDefinition> FilteredExercises => exercises
+        .Where(item => selectedCategory == "Alle" || item.Category == selectedCategory)
+        .Where(item => selectedMuscleGroup == "Alle" || item.MuscleGroups.Contains(selectedMuscleGroup));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Database.InitializeAsync();
+        exercises = await Database.GetExercisesAsync();
+        currentUser = await Auth.GetCurrentUserAsync();
+        await RefreshSavedWorkoutsAsync();
+        loading = false;
+    }
+
+    private void ToggleLibrary() => libraryOpen = !libraryOpen;
+
+    private Task LoadSelectedWorkoutAsync()
+    {
+        var workout = savedWorkouts.FirstOrDefault(item => item.Id.ToString() == selectedWorkoutId);
+        if (workout is null)
+        {
+            loadMessage = "Das ausgewählte Training wurde nicht gefunden.";
+            return Task.CompletedTask;
+        }
+
+        model.Name = workout.Name;
+        model.PerformedAt = DateTime.Today;
+        model.DurationMinutes = workout.DurationMinutes;
+        model.Notes = string.Empty;
+        saveAsGlobal = currentUser.CanManageUsers && workout.Visibility == WorkoutVisibility.Global;
+        selectedExercises.Clear();
+        selectedExercises.AddRange(workout.Exercises.Select(CloneExercise));
+        showExerciseError = false;
+        loadMessage = $"„{workout.Name}“ wurde als bearbeitbare Kopie geladen.";
+        return Task.CompletedTask;
+    }
+
+    private async Task DeleteSelectedWorkoutAsync()
+    {
+        var workout = savedWorkouts.FirstOrDefault(item => item.Id.ToString() == selectedWorkoutId);
+        if (workout is null)
+        {
+            loadMessage = "Das ausgewählte Training wurde nicht gefunden.";
+            return;
+        }
+
+        await Workouts.DeleteAsync(workout.Id);
+        selectedWorkoutId = string.Empty;
+        await RefreshSavedWorkoutsAsync();
+        loadMessage = $"„{workout.Name}“ wurde gelöscht.";
+    }
+
+    private async Task RefreshSavedWorkoutsAsync()
+    {
+        var allWorkouts = await Workouts.GetAllAsync();
+        savedWorkouts = allWorkouts.Where(CanSeeWorkout).ToList();
+    }
+
+    private bool CanSeeWorkout(WorkoutSession workout)
+    {
+        if (workout.Visibility == WorkoutVisibility.Global)
+        {
+            return true;
+        }
+
+        if (currentUser.AuthenticationMode != "Sql" || !currentUser.IsAuthenticated)
+        {
+            return true;
+        }
+
+        return string.Equals(workout.OwnerUserName, currentUser.UserName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task AddExercise(ExerciseDefinition exercise)
+    {
+        if (selectedExercises.Any(item => item.ExerciseId == exercise.Id))
+        {
+            return;
+        }
+
+        var previous = await Workouts.GetLastExerciseAsync(exercise.Id);
+        var entry = new ExerciseEntry
+        {
+            ExerciseId = exercise.Id,
+            Name = exercise.Name,
+            MuscleGroup = exercise.MuscleGroup,
+            MuscleGroups = exercise.MuscleGroups.ToList(),
+            ImageUrl = exercise.ImageUrl,
+            ExerciseType = exercise.ExerciseType,
+            Sets = 3
+        };
+
+        if (exercise.ExerciseType is ExerciseTypes.Endurance or ExerciseTypes.Other || exercise.MuscleGroups.Contains("Ausdauer"))
+        {
+            entry.SetEntries = [];
+            entry.DurationMinutes = previous?.DurationMinutes > 0 ? previous.DurationMinutes : 30;
+            entry.Difficulty = previous?.Difficulty ?? 5;
+            if (exercise.ExerciseType == ExerciseTypes.Endurance)
+            {
+                entry.DistanceKm = previous?.DistanceKm ?? 0;
+                entry.ElevationMeters = previous?.ElevationMeters;
+            }
+        }
+        else
+        {
+            entry.SetEntries = previous?.SetEntries.Count > 0
+                ? previous.SetEntries.Select(set => new ExerciseSetEntry
+                {
+                    Repetitions = set.Repetitions,
+                    WeightKg = set.WeightKg,
+                    Difficulty = set.Difficulty
+                }).ToList()
+                : [new(), new(), new()];
+            entry.Sets = entry.SetEntries.Count;
+            entry.Repetitions = entry.SetEntries[0].Repetitions;
+            entry.WeightKg = entry.SetEntries[0].WeightKg;
+        }
+
+        selectedExercises.Add(entry);
+        showExerciseError = false;
+    }
+
+    private void RemoveExercise(ExerciseEntry exercise) => selectedExercises.Remove(exercise);
+
+    private void ClearExercises() => selectedExercises.Clear();
+
+    private void ClosePreview() => expandedPreviewUrl = null;
+
+    private void TogglePreview(ExerciseEntry exercise)
+    {
+        if (expandedPreviewUrl == exercise.ImageUrl)
+        {
+            ClosePreview();
+            return;
+        }
+
+        expandedPreviewUrl = exercise.ImageUrl;
+        expandedPreviewAlt = exercise.Name;
+    }
+
+    private static void AddSet(ExerciseEntry exercise)
+    {
+        if (exercise.SetEntries.Count >= 20)
+        {
+            return;
+        }
+
+        var previous = exercise.SetEntries.LastOrDefault();
+        exercise.SetEntries.Add(new ExerciseSetEntry
+        {
+            Repetitions = previous?.Repetitions ?? 10,
+            WeightKg = previous?.WeightKg ?? 0,
+            Difficulty = previous?.Difficulty ?? 5
+        });
+    }
+
+    private static ExerciseEntry CloneExercise(ExerciseEntry exercise) => new()
+    {
+        ExerciseId = exercise.ExerciseId,
+        Name = exercise.Name,
+        MuscleGroup = exercise.MuscleGroup,
+        MuscleGroups = exercise.MuscleGroups.ToList(),
+        ImageUrl = exercise.ImageUrl,
+        ExerciseType = exercise.ExerciseType,
+        Sets = exercise.Sets,
+        Repetitions = exercise.Repetitions,
+        WeightKg = exercise.WeightKg,
+        DurationMinutes = exercise.DurationMinutes,
+        DistanceKm = exercise.DistanceKm,
+        ElevationMeters = exercise.ElevationMeters,
+        Difficulty = exercise.Difficulty,
+        SetEntries = exercise.SetEntries.Select(set => new ExerciseSetEntry
+        {
+            Repetitions = set.Repetitions,
+            WeightKg = set.WeightKg,
+            Difficulty = set.Difficulty
+        }).ToList()
+    };
+
+    private static bool IsDistanceEndurance(ExerciseEntry exercise) => exercise.ExerciseType == ExerciseTypes.Endurance;
+
+    private static bool UsesDuration(ExerciseEntry exercise) =>
+        exercise.ExerciseType == ExerciseTypes.Other
+        || exercise.MuscleGroups.Contains("Ausdauer", StringComparer.OrdinalIgnoreCase)
+        || string.Equals(exercise.MuscleGroup, "Ausdauer", StringComparison.OrdinalIgnoreCase);
+
+    private static void RemoveSet(ExerciseEntry exercise, ExerciseSetEntry set)
+    {
+        if (exercise.SetEntries.Count > 1)
+        {
+            exercise.SetEntries.Remove(set);
+        }
+    }
+
+    private static string DifficultyLabel(int difficulty) => difficulty switch
+    {
+        <= 2 => "Sehr leicht",
+        <= 4 => "Leicht",
+        <= 6 => "Mittel",
+        <= 8 => "Schwer",
+        _ => "Maximal"
+    };
+
+    private static string TypeLabel(ExerciseEntry exercise) => exercise.ExerciseType switch
+    {
+        ExerciseTypes.Endurance => "Ausdauer",
+        ExerciseTypes.Other => "Sonstiges",
+        _ => exercise.MuscleGroup
+    };
+
+    private async Task SaveAsync()
+    {
+        if (selectedExercises.Count == 0 || selectedExercises.Any(item => item.ExerciseType switch
+            {
+                ExerciseTypes.Endurance => item.DurationMinutes is < 1 or > 1440 || item.DistanceKm is < 0 or > 10000 || item.ElevationMeters is < 0 or > 100000 || item.Difficulty is < 1 or > 10,
+                _ when UsesDuration(item) => item.DurationMinutes is < 1 or > 1440 || item.Difficulty is < 1 or > 10,
+                _ => item.SetEntries.Count is < 1 or > 20 || item.SetEntries.Any(set => set.Repetitions is < 1 or > 100 || set.WeightKg is < 0 or > 1000 || set.Difficulty is < 1 or > 10)
+            }))
+        {
+            showExerciseError = true;
+            return;
+        }
+
+        saving = true;
+        foreach (var exercise in selectedExercises)
+        {
+            if (exercise.ExerciseType is ExerciseTypes.Endurance or ExerciseTypes.Other)
+            {
+                continue;
+            }
+
+            exercise.Sets = exercise.SetEntries.Count;
+            exercise.Repetitions = exercise.SetEntries[0].Repetitions;
+            exercise.WeightKg = exercise.SetEntries[0].WeightKg;
+        }
+
+        await Workouts.AddAsync(new WorkoutSession
+        {
+            Name = model.Name.Trim(),
+            OwnerUserName = currentUser.AuthenticationMode == "Sql" ? currentUser.UserName : null,
+            Visibility = currentUser.CanManageUsers && saveAsGlobal ? WorkoutVisibility.Global : WorkoutVisibility.Personal,
+            PerformedAt = model.PerformedAt,
+            DurationMinutes = model.DurationMinutes,
+            Notes = model.Notes.Trim(),
+            Exercises = selectedExercises.Select(CloneExercise).ToList()
+        });
+        Navigation.NavigateTo("/");
+    }
+}

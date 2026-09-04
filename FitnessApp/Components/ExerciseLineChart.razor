@@ -1,0 +1,53 @@
+<section class="app-card line-chart-card">
+    <h2>@Title</h2>
+    <p>Entwicklung pro Trainingseinheit</p>
+    @if (Values.Count == 0)
+    {
+        <div class="progress-empty">Keine Werte vorhanden.</div>
+    }
+    else
+    {
+        <svg class="line-chart" viewBox="0 0 720 280" role="img" aria-label="@Title im zeitlichen Verlauf">
+            @foreach (var y in new[] { 40, 100, 160, 220 })
+            {
+                <line class="chart-grid-line" x1="55" y1="@y" x2="690" y2="@y" />
+            }
+            <polyline class="chart-line @(Secondary ? "secondary" : null)" points="@PolylinePoints" />
+            @for (var index = 0; index < Values.Count; index++)
+            {
+                var point = Values[index];
+                var x = X(index);
+                var y = Y(point.Value);
+                <circle class="chart-dot" cx="@Format(x)" cy="@Format(y)" r="6">
+                    <title>@point.Date.ToString("dd.MM.yyyy"): @point.Value.ToString("0.##") @Unit</title>
+                </circle>
+            }
+        </svg>
+        <div class="chart-axis-labels">
+            <span>@Values.First().Date.ToString("dd.MM.yy")</span>
+            <strong>Maximum: @Maximum.ToString("0.##") @Unit</strong>
+            <span>@Values.Last().Date.ToString("dd.MM.yy")</span>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string Unit { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChartValue> Values { get; set; } = [];
+
+    [Parameter]
+    public bool Secondary { get; set; }
+
+    private decimal Maximum => Math.Max(1, Values.Count == 0 ? 1 : Values.Max(point => point.Value));
+    private string PolylinePoints => string.Join(" ", Values.Select((point, index) => $"{Format(X(index))},{Format(Y(point.Value))}"));
+
+    private decimal X(int index) => Values.Count == 1 ? 372.5m : 55m + index * 635m / (Values.Count - 1);
+    private decimal Y(decimal value) => 220m - value * 180m / Maximum;
+    private static string Format(decimal value) => value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}
