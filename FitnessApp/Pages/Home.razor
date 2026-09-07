@@ -14,6 +14,8 @@
 	<a class="app-button btn-primary" href="training">＋ Training starten</a>
 </header>
 
+<img class="dashboard-motivation-image" src="/media/NoPainNoGain.png?v=20260907b" alt="No Pain No Gain" />
+
 @if (items is null)
 {
 	<p class="muted">Deine Übersicht wird geladen …</p>
@@ -32,11 +34,23 @@ else
 			<small>Minuten diese Woche</small>
 		</article>
 		<article class="stat-card">
-			<span>Serie</span>
+			<span>Wochenserie</span>
 			<strong>@CurrentStreak</strong>
-			<small>aktive Tage</small>
+			<small>@(CurrentStreak == 1 ? "Woche in Folge" : "Wochen in Folge") · Rekord @LongestStreak</small>
 		</article>
 	</div>
+
+	@if (NextEvent is not null)
+	{
+		<section class="app-card next-event-card">
+			<div>
+				<span class="eyebrow">Nächstes Ziel</span>
+				<h2>@NextEvent.Title</h2>
+				<p>@NextEvent.EventDate.ToString("dd.MM.yyyy") · @EventCountdown(NextEvent)</p>
+			</div>
+			<a class="app-button secondary" href="ziele">Ziele verwalten</a>
+		</section>
+	}
 
 	<section class="app-card activity-calendar-card">
 		<div class="calendar-heading">
@@ -63,9 +77,13 @@ else
 				}
 				else
 				{
-					<div class="calendar-day @(day.ExerciseCount > 0 ? "active" : null) @(day.Date == DateTime.Today ? "today" : null)"
+					<div class="calendar-day @(day.ExerciseCount > 0 ? "active" : null) @(day.Events.Count > 0 ? "has-event" : null) @(day.Date == DateTime.Today ? "today" : null)"
 						 title="@CalendarDayTitle(day)">
 						<span>@day.Date.Day</span>
+						@if (day.Events.Count > 0)
+						{
+							<span class="calendar-event-marker" aria-label="@EventMarkerLabel(day)">◎</span>
+						}
 						@if (day.ExerciseCount > 0)
 						{
 							<strong>@day.ExerciseCount</strong>
@@ -105,16 +123,20 @@ else
 	private IReadOnlyList<WorkoutSession>? items;
 	private string displayName = "Sportler";
 	private CurrentUserState currentUser = new();
+	private WeeklyStats? weeklyStats;
+	private IReadOnlyList<UserEvent> userEvents = [];
 	private int weeklyGoal = 3;
 	private DateTime visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
 	private static readonly string[] Weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 	private static readonly System.Globalization.CultureInfo GermanCulture = System.Globalization.CultureInfo.GetCultureInfo("de-DE");
 	private DateTime WeekStart => DateTime.Today.AddDays(-((7 + (int)DateTime.Today.DayOfWeek - (int)DayOfWeek.Monday) % 7));
 	private IEnumerable<WorkoutSession> VisibleItems => items?.Where(CanSeeWorkout) ?? [];
-	private int ThisWeekCount => VisibleItems.Count(item => item.PerformedAt.Date >= WeekStart);
+	private int ThisWeekCount => weeklyStats?.SessionCount ?? VisibleItems.Count(item => item.PerformedAt.Date >= WeekStart);
 	private int ThisWeekMinutes => VisibleItems.Where(item => item.PerformedAt.Date >= WeekStart).Sum(item => item.DurationMinutes);
 	private int GoalPercent => Math.Min(100, ThisWeekCount * 100 / Math.Max(1, weeklyGoal));
-	private int CurrentStreak => VisibleItems.Select(item => item.PerformedAt.Date).Distinct().OrderDescending().TakeWhile((date, index) => date >= DateTime.Today.AddDays(-index - 1)).Count();
+	private int CurrentStreak => weeklyStats?.CurrentStreak ?? CalculateLocalWeeklyStats().CurrentStreak;
+	private int LongestStreak => weeklyStats?.LongestStreak ?? CalculateLocalWeeklyStats().LongestStreak;
+	private UserEvent? NextEvent => userEvents.Where(item => !item.IsCompleted).OrderBy(item => item.EventDate).FirstOrDefault();
 	private string MonthTitle => visibleMonth.ToString("MMMM yyyy", GermanCulture);
 	private int YearActiveDays => VisibleItems.Where(item => item.PerformedAt.Year == DateTime.Today.Year).Select(item => item.PerformedAt.Date).Distinct().Count();
 	private IEnumerable<string> YearMonthLabels => Enumerable.Range(1, 12).Select(month => new DateTime(DateTime.Today.Year, month, 1).ToString("MMM", GermanCulture));
@@ -127,7 +149,7 @@ else
 			var days = Enumerable.Repeat<CalendarDay?>(null, leadingDays).ToList();
 			days.AddRange(Enumerable.Range(1, DateTime.DaysInMonth(visibleMonth.Year, visibleMonth.Month))
 				.Select(day => new DateTime(visibleMonth.Year, visibleMonth.Month, day))
-				.Select(date => new CalendarDay(date, ExerciseCount(date))));
+				.Select(date => new CalendarDay(date, ExerciseCount(date), EventsOn(date))));
 			while (days.Count % 7 != 0)
 			{
 				days.Add(null);
@@ -145,6 +167,11 @@ else
 		.Where(workout => workout.PerformedAt.Date == date.Date)
 		.Sum(workout => workout.Exercises.Count);
 
+	private IReadOnlyList<UserEvent> EventsOn(DateTime date) => userEvents
+		.Where(item => item.EventDate.Date == date.Date)
+		.OrderBy(item => item.Title)
+		.ToList();
+
 	private bool CanSeeWorkout(WorkoutSession workout)
 	{
 		if (workout.Visibility == WorkoutVisibility.Global)
@@ -160,9 +187,19 @@ else
 		return string.Equals(workout.OwnerUserName, currentUser.UserName, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static string CalendarDayTitle(CalendarDay day) => day.ExerciseCount == 0
-		? $"{day.Date:dd.MM.yyyy}: keine Aktivität"
-		: $"{day.Date:dd.MM.yyyy}: {day.ExerciseCount} Übung(en)";
+	private static string CalendarDayTitle(CalendarDay day)
+	{
+		var details = new List<string>();
+		if (day.ExerciseCount > 0)
+			details.Add($"{day.ExerciseCount} Übung(en)");
+		if (day.Events.Count > 0)
+			details.AddRange(day.Events.Select(item => $"Ziel: {item.Title}{(item.IsCompleted ? " (abgeschlossen)" : string.Empty)}"));
+		return $"{day.Date:dd.MM.yyyy}: {(details.Count == 0 ? "keine Aktivität" : string.Join(" · ", details))}";
+	}
+
+	private static string EventMarkerLabel(CalendarDay day) => day.Events.Count == 1
+		? $"Ziel: {day.Events[0].Title}"
+		: $"{day.Events.Count} Ziele";
 
 	private static string YearDayTitle(YearDay day) => day.ExerciseCount == 0
 		? $"{day.Date:dd.MM.yyyy}: keine Aktivität"
@@ -180,9 +217,57 @@ else
 			? currentUser.DisplayName ?? currentUser.UserName ?? settings.DisplayName
 			: settings.DisplayName;
 		weeklyGoal = settings.WeeklyGoal;
+		if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+		{
+			weeklyGoal = (await Auth.GetUserProfileAsync()).WeeklyGoal;
+			weeklyStats = await Auth.GetWeeklyStatsAsync();
+			weeklyGoal = weeklyStats.WeeklyGoal;
+			userEvents = await Auth.GetEventsAsync();
+		}
 	}
 
-	private sealed record CalendarDay(DateTime Date, int ExerciseCount);
+	private static string EventCountdown(UserEvent item)
+	{
+		var days = (item.EventDate.Date - DateTime.Today).Days;
+		return days switch { 0 => "Heute", 1 => "Noch 1 Tag", > 1 => $"Noch {days} Tage", -1 => "Seit 1 Tag fällig", _ => $"Seit {-days} Tagen fällig" };
+	}
+
+	private WeeklyStats CalculateLocalWeeklyStats()
+	{
+		var sessionsByWeek = VisibleItems
+			.GroupBy(item => StartOfWeek(item.PerformedAt.Date))
+			.ToDictionary(group => group.Key, group => group.Count());
+		var successfulWeeks = sessionsByWeek
+			.Where(pair => pair.Value >= weeklyGoal)
+			.Select(pair => pair.Key)
+			.ToHashSet();
+		var currentWeek = StartOfWeek(DateTime.Today);
+		var currentStreak = 0;
+		var cursor = successfulWeeks.Contains(currentWeek) ? currentWeek : currentWeek.AddDays(-7);
+		while (successfulWeeks.Contains(cursor))
+		{
+			currentStreak++;
+			cursor = cursor.AddDays(-7);
+		}
+
+		var longestStreak = 0;
+		var runningStreak = 0;
+		DateTime? previousWeek = null;
+		foreach (var week in successfulWeeks.Order())
+		{
+			runningStreak = previousWeek.HasValue && week == previousWeek.Value.AddDays(7) ? runningStreak + 1 : 1;
+			longestStreak = Math.Max(longestStreak, runningStreak);
+			previousWeek = week;
+		}
+
+		var currentSessions = sessionsByWeek.GetValueOrDefault(currentWeek);
+		return new WeeklyStats(currentWeek, currentSessions, weeklyGoal, currentSessions >= weeklyGoal, currentStreak, longestStreak);
+	}
+
+	private static DateTime StartOfWeek(DateTime date) =>
+		date.AddDays(-((7 + (int)date.DayOfWeek - (int)DayOfWeek.Monday) % 7)).Date;
+
+	private sealed record CalendarDay(DateTime Date, int ExerciseCount, IReadOnlyList<UserEvent> Events);
 	private sealed record YearDay(DateTime Date, int ExerciseCount)
 	{
 		public int Level => ExerciseCount switch { 0 => 0, 1 => 1, 2 => 2, <= 4 => 3, _ => 4 };

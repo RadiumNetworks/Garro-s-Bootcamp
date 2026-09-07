@@ -1,47 +1,56 @@
 @page "/training"
+@page "/training-erstellen"
+@implements IDisposable
+@using Microsoft.AspNetCore.Components.Routing
 @inject WorkoutService Workouts
 @inject FitTrackDatabaseService Database
 @inject NavigationManager Navigation
 @inject AuthService Auth
 
-<PageTitle>Training zusammenstellen</PageTitle>
+<PageTitle>@(IsTemplateEditor ? "Training erstellen" : "Training absolvieren")</PageTitle>
 
 <header class="page-header training-header">
     <div>
-        <span class="eyebrow">Trainingsplaner</span>
-        <h1>Training zusammenstellen</h1>
-        <p>Filtere Übungen und ziehe sie in dein Training. Auf Mobilgeräten kannst du auch auf <strong>Hinzufügen</strong> tippen.</p>
+        <span class="eyebrow">@(IsTemplateEditor ? "Vorlagenverwaltung" : "Dein heutiges Training")</span>
+        <h1>@(IsTemplateEditor ? "Training erstellen" : "Training absolvieren")</h1>
+        <p>@(IsTemplateEditor ? "Stelle eine Trainingsvorlage zusammen oder aktualisiere eine vorhandene Vorlage." : "Lade eine Vorlage, trage deine tatsächlichen Werte ein und schließe das Training ab.")</p>
     </div>
     <div class="training-header-actions">
         <div class="exercise-count" aria-label="Anzahl ausgewählter Übungen">
             <strong>@selectedExercises.Count</strong>
             <span>Übungen</span>
         </div>
-        <button type="button" class="app-button library-toggle" @onclick="ToggleLibrary" aria-expanded="@libraryOpen" aria-controls="exercise-library">
-            <span aria-hidden="true">@(libraryOpen ? "×" : "+")</span>
-            @(libraryOpen ? "Auswahl schließen" : "Übungen auswählen")
-        </button>
+        @if (IsTemplateEditor)
+        {
+            <button type="button" class="app-button library-toggle" @onclick="ToggleLibrary" aria-expanded="@libraryOpen" aria-controls="exercise-library">
+                <span aria-hidden="true">@(libraryOpen ? "×" : "+")</span>
+                @(libraryOpen ? "Auswahl schließen" : "Übungen auswählen")
+            </button>
+        }
     </div>
 </header>
 
 <section class="app-card saved-workout-picker">
     <div>
-        <span class="eyebrow">Gespeicherte Trainings</span>
-        <h2>Training wiederverwenden</h2>
-        <p>Wähle ein gespeichertes Training, lade es in dein Dashboard und passe es vor dem erneuten Speichern an.</p>
+        <span class="eyebrow">Trainingsvorlagen</span>
+        <h2>@(IsTemplateEditor ? "Vorlage verwalten" : "Vorlage laden")</h2>
+        <p>@(IsTemplateEditor ? "Lade eine Vorlage zum Bearbeiten oder Löschen." : "Wähle die Vorlage für deine nächste Trainingseinheit.")</p>
     </div>
     <div class="saved-workout-controls">
         <label for="savedWorkout">Training auswählen</label>
         <select id="savedWorkout" @bind="selectedWorkoutId" disabled="@(savedWorkouts.Count == 0)">
-            <option value="">@(savedWorkouts.Count == 0 ? "Noch keine Trainings gespeichert" : "Bitte auswählen")</option>
+            <option value="">@(savedWorkouts.Count == 0 ? "Noch keine Vorlagen gespeichert" : "Bitte auswählen")</option>
             @foreach (var workout in savedWorkouts)
             {
                 <option value="@workout.Id">@workout.PerformedAt.ToString("dd.MM.yyyy") · @workout.Name (@workout.Exercises.Count Üb.)</option>
             }
         </select>
         <div class="saved-workout-actions">
-            <button type="button" class="app-button secondary" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="LoadSelectedWorkoutAsync">Training laden</button>
-            <button type="button" class="app-button danger" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="DeleteSelectedWorkoutAsync">Training löschen</button>
+            <button type="button" class="app-button secondary" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="LoadSelectedWorkoutAsync">Vorlage laden</button>
+            @if (IsTemplateEditor)
+            {
+                <button type="button" class="app-button danger" disabled="@string.IsNullOrWhiteSpace(selectedWorkoutId)" @onclick="DeleteSelectedWorkoutAsync">Vorlage löschen</button>
+            }
         </div>
     </div>
 </section>
@@ -60,7 +69,9 @@
 }
 else
 {
-    <div class="training-builder @(libraryOpen ? "library-open" : null)">
+    <div @key="IsTemplateEditor" class="training-builder @(libraryOpen ? "library-open" : null) @(!IsTemplateEditor ? "training-runtime" : null)">
+        @if (IsTemplateEditor)
+        {
         <aside id="exercise-library" class="exercise-library app-card @(libraryOpen ? "open" : null)" aria-labelledby="exercise-library-title" aria-hidden="@(!libraryOpen)">
             <div class="section-heading builder-heading">
                 <div>
@@ -74,6 +85,14 @@ else
             </div>
 
             <div class="exercise-filters">
+                <label class="exercise-search">
+                    <span class="filter-label">Übung suchen</span>
+                    <input type="search"
+                           @bind="exerciseSearch"
+                           @bind:event="oninput"
+                           placeholder="Name oder Beschreibung"
+                           autocomplete="off" />
+                </label>
                 <div class="filter-group">
                     <span class="filter-label">Übungstyp</span>
                     <div class="muscle-filters" role="group" aria-label="Nach Übungstyp filtern">
@@ -108,7 +127,7 @@ else
                 @foreach (var exercise in FilteredExercises)
                 {
                     var isSelected = selectedExercises.Any(item => item.ExerciseId == exercise.Id);
-                    <article class="exercise-card @(isSelected ? "selected" : null)"
+                    <article @key="exercise.Id" class="exercise-card @(isSelected ? "selected" : null)"
                              draggable="true"
                              data-exercise-id="@exercise.Id">
                         <div class="exercise-card-top">
@@ -117,7 +136,7 @@ else
                         </div>
                         @if (!string.IsNullOrWhiteSpace(exercise.ImageUrl))
                         {
-                            <img class="exercise-card-image" src="@exercise.ImageUrl" alt="@exercise.Name" loading="lazy" />
+                            <img @key="exercise.ImageUrl" class="exercise-card-image" src="@exercise.ImageUrl" alt="@exercise.Name" loading="lazy" />
                         }
                         <h3>@exercise.Name</h3>
                         <p>@exercise.Description</p>
@@ -134,7 +153,19 @@ else
             </div>
         </aside>
 
-        <EditForm Model="model" OnValidSubmit="SaveAsync" class="workout-dashboard app-card">
+        @if (libraryOpen)
+        {
+            <button type="button"
+                    class="library-edge-close"
+                    aria-label="Übungsauswahl minimieren und zum Training zurückkehren"
+                    title="Zum Training zurückkehren"
+                    @onclick="ToggleLibrary">
+                <span aria-hidden="true">‹</span>
+            </button>
+        }
+        }
+
+        <EditForm Model="model" OnValidSubmit="SaveAsync" class="@(IsTemplateEditor ? "workout-dashboard app-card" : "workout-dashboard app-card runtime-dashboard")">
             <DataAnnotationsValidator />
 
             <div class="dashboard-title">
@@ -142,7 +173,7 @@ else
                     <span class="eyebrow">Dein Dashboard</span>
                     <h2>Aktuelles Training</h2>
                 </div>
-                @if (selectedExercises.Count > 0)
+                @if (IsTemplateEditor && selectedExercises.Count > 0)
                 {
                     <button type="button" class="clear-button" @onclick="ClearExercises">Leeren</button>
                 }
@@ -151,19 +182,19 @@ else
             <div class="compact-form-grid">
                 <div class="field field-wide">
                     <label for="name">Name des Trainings</label>
-                    <InputText id="name" @bind-Value="model.Name" placeholder="z. B. Oberkörper" />
+                    <input id="name" type="text" @bind="model.Name" @bind:event="oninput" @bind:after="PersistDraftAsync" placeholder="z. B. Oberkörper" />
                     <ValidationMessage For="@(() => model.Name)" />
                 </div>
                 <div class="field">
                     <label for="date">Datum</label>
-                    <InputDate id="date" @bind-Value="model.PerformedAt" />
+                    <InputDate id="date" @bind-Value="model.PerformedAt" @bind-Value:after="PersistDraftAsync" />
                 </div>
                 <div class="field">
                     <label for="duration">Dauer (Min.)</label>
-                    <InputNumber id="duration" @bind-Value="model.DurationMinutes" />
+                    <InputNumber id="duration" @bind-Value="model.DurationMinutes" @bind-Value:after="PersistDraftAsync" />
                     <ValidationMessage For="@(() => model.DurationMinutes)" />
                 </div>
-                @if (currentUser.CanManageUsers)
+                @if (IsTemplateEditor && currentUser.CanManageUsers)
                 {
                     <label class="visibility-toggle field-wide">
                         <InputCheckbox @bind-Value="saveAsGlobal" />
@@ -192,7 +223,8 @@ else
                         {
                             var item = selectedExercises[index];
                             var itemNumber = index + 1;
-                            <article class="selected-exercise">
+                            var isExpanded = IsTemplateEditor || expandedExercises.Contains(item.ExerciseId);
+                            <article @key="item.ExerciseId" class="selected-exercise @(isExpanded ? "expanded" : "collapsed")">
                                 <div class="selected-exercise-heading @(string.IsNullOrWhiteSpace(item.ImageUrl) ? "without-image" : null)">
                                     <span class="exercise-number">@itemNumber</span>
                                     @if (!string.IsNullOrWhiteSpace(item.ImageUrl))
@@ -205,26 +237,53 @@ else
                                         <h3>@item.Name</h3>
                                         <span>@TypeLabel(item)</span>
                                     </div>
-                                    <button type="button" class="remove-exercise" aria-label="@item.Name entfernen" @onclick="() => RemoveExercise(item)">×</button>
+                                    @if (IsTemplateEditor)
+                                    {
+                                        <div class="exercise-order-actions" aria-label="Reihenfolge für @item.Name ändern">
+                                            <button type="button"
+                                                    disabled="@(index == 0)"
+                                                    aria-label="@item.Name nach oben verschieben"
+                                                    title="Nach oben"
+                                                    @onclick="() => MoveExerciseAsync(item, -1)">↑</button>
+                                            <button type="button"
+                                                    disabled="@(index == selectedExercises.Count - 1)"
+                                                    aria-label="@item.Name nach unten verschieben"
+                                                    title="Nach unten"
+                                                    @onclick="() => MoveExerciseAsync(item, 1)">↓</button>
+                                        </div>
+                                        <button type="button" class="remove-exercise" aria-label="@item.Name entfernen" @onclick="() => RemoveExercise(item)">×</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="exercise-expand-button"
+                                                aria-expanded="@isExpanded"
+                                                aria-label="@(isExpanded ? $"{item.Name} einklappen" : $"{item.Name} öffnen")"
+                                                @onclick="() => ToggleExercise(item)">
+                                            <span aria-hidden="true">⌄</span>
+                                        </button>
+                                    }
                                 </div>
+                                @if (isExpanded)
+                                {
                                 @if (IsDistanceEndurance(item))
                                 {
                                     <div class="endurance-editor">
                                         <label>
                                             <span>Dauer (Min.)</span>
-                                            <InputNumber @bind-Value="item.DurationMinutes" min="1" max="1440" />
+                                            <InputNumber @bind-Value="item.DurationMinutes" @bind-Value:after="PersistDraftAsync" min="1" max="1440" />
                                         </label>
                                         <label>
                                             <span>Entfernung (km)</span>
-                                            <InputNumber @bind-Value="item.DistanceKm" min="0" max="10000" step="0.01" />
+                                            <InputNumber @bind-Value="item.DistanceKm" @bind-Value:after="PersistDraftAsync" min="0" max="10000" step="0.01" />
                                         </label>
                                         <label>
                                             <span>Höhenmeter (optional)</span>
-                                            <InputNumber @bind-Value="item.ElevationMeters" min="0" max="100000" />
+                                            <InputNumber @bind-Value="item.ElevationMeters" @bind-Value:after="PersistDraftAsync" min="0" max="100000" />
                                         </label>
                                         <label class="difficulty-control">
                                             <span>Belastung <strong>@item.Difficulty/10</strong></span>
-                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Belastung für @item.Name" />
+                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" @bind:after="PersistDraftAsync" min="1" max="10" aria-label="Belastung für @item.Name" />
                                             <small>@DifficultyLabel(item.Difficulty)</small>
                                         </label>
                                     </div>
@@ -234,11 +293,11 @@ else
                                     <div class="other-activity-editor">
                                         <label>
                                             <span>Dauer (Min.)</span>
-                                            <InputNumber @bind-Value="item.DurationMinutes" min="1" max="1440" />
+                                            <InputNumber @bind-Value="item.DurationMinutes" @bind-Value:after="PersistDraftAsync" min="1" max="1440" />
                                         </label>
                                         <label class="difficulty-control">
                                             <span>Intensität <strong>@item.Difficulty/10</strong></span>
-                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Intensität für @item.Name" />
+                                            <input type="range" @bind="item.Difficulty" @bind:event="oninput" @bind:after="PersistDraftAsync" min="1" max="10" aria-label="Intensität für @item.Name" />
                                             <small>@DifficultyLabel(item.Difficulty)</small>
                                         </label>
                                     </div>
@@ -248,31 +307,40 @@ else
                                     <div class="set-editor">
                                     <div class="set-editor-header">
                                         <strong>Sätze</strong>
-                                        <button type="button" class="add-set-button" @onclick="() => AddSet(item)">+ Satz</button>
+                                        @if (IsTemplateEditor)
+                                        {
+                                            <button type="button" class="add-set-button" @onclick="() => AddSet(item)">+ Satz</button>
+                                        }
                                     </div>
+                                    <label class="difficulty-control exercise-difficulty-control">
+                                        <span>Belastung der Übung <strong>@item.Difficulty/10</strong></span>
+                                        <input type="range" @bind="item.Difficulty" @bind:event="oninput" @bind:after="PersistDraftAsync" min="1" max="10" aria-label="Belastung für @item.Name" />
+                                        <small>@DifficultyLabel(item.Difficulty)</small>
+                                    </label>
                                     @for (var setIndex = 0; setIndex < item.SetEntries.Count; setIndex++)
                                     {
                                         var set = item.SetEntries[setIndex];
                                         var setNumber = setIndex + 1;
-                                        <div class="set-row" @key="set">
+                                        <div class="set-row @(IsTemplateEditor ? "editable" : null)" @key="set">
                                             <strong class="set-number">@setNumber</strong>
                                             <label>
-                                                <span>Wiederholungen</span>
-                                                <InputNumber @bind-Value="set.Repetitions" min="1" max="100" />
+                                                <span class="set-label-long">Wiederholungen</span>
+                                                <span class="set-label-short">Wdh.</span>
+                                                <input type="number" @bind="set.Repetitions" @bind:event="oninput" @bind:after="PersistDraftAsync" min="1" max="100" />
                                             </label>
                                             <label>
-                                                <span>Gewicht (kg)</span>
-                                                <InputNumber @bind-Value="set.WeightKg" min="0" max="1000" step="0.5" />
+                                                <span class="set-label-long">Gewicht (kg)</span>
+                                                <span class="set-label-short">Gewicht kg</span>
+                                                <input type="number" @bind="set.WeightKg" @bind:event="oninput" @bind:after="PersistDraftAsync" min="0" max="1000" step="0.5" />
                                             </label>
-                                            <label class="difficulty-control">
-                                                <span>Belastung <strong>@set.Difficulty/10</strong></span>
-                                                <input type="range" @bind="set.Difficulty" @bind:event="oninput" min="1" max="10" aria-label="Belastung für Satz @setNumber" />
-                                                <small>@DifficultyLabel(set.Difficulty)</small>
-                                            </label>
-                                            <button type="button" class="remove-set-button" disabled="@(item.SetEntries.Count == 1)" aria-label="Satz @setNumber entfernen" @onclick="() => RemoveSet(item, set)">×</button>
+                                            @if (IsTemplateEditor)
+                                            {
+                                                <button type="button" class="remove-set-button" disabled="@(item.SetEntries.Count == 1)" aria-label="Satz @setNumber entfernen" @onclick="() => RemoveSet(item, set)">×</button>
+                                            }
                                         </div>
                                     }
                                     </div>
+                                }
                                 }
                             </article>
                         }
@@ -287,11 +355,11 @@ else
 
             <div class="field notes-field">
                 <label for="notes">Notizen</label>
-                <InputTextArea id="notes" @bind-Value="model.Notes" placeholder="Wie hat es sich angefühlt?" />
+                <textarea id="notes" @bind="model.Notes" @bind:event="oninput" @bind:after="PersistDraftAsync" placeholder="Wie hat es sich angefühlt?"></textarea>
             </div>
 
             <button class="btn-primary app-button save-workout" type="submit" disabled="@saving">
-                @(saving ? "Wird gespeichert …" : "Training speichern")
+                @(saving ? "Wird gespeichert …" : IsTemplateEditor ? "Vorlage speichern" : "Training abschließen")
             </button>
         </EditForm>
     </div>
@@ -307,12 +375,15 @@ else
 @code {
     private readonly WorkoutFormModel model = new();
     private readonly List<ExerciseEntry> selectedExercises = [];
+    private readonly HashSet<Guid> expandedExercises = [];
     private IReadOnlyList<ExerciseDefinition> exercises = [];
     private IReadOnlyList<WorkoutSession> savedWorkouts = [];
     private CurrentUserState currentUser = new();
     private string selectedCategory = "Alle";
     private string selectedMuscleGroup = "Alle";
+    private string exerciseSearch = string.Empty;
     private string selectedWorkoutId = string.Empty;
+    private Guid? loadedTemplateId;
     private string? loadMessage;
     private bool saveAsGlobal;
     private bool libraryOpen;
@@ -321,6 +392,9 @@ else
     private bool showExerciseError;
     private string? expandedPreviewUrl;
     private string expandedPreviewAlt = string.Empty;
+    private bool activeEditorMode;
+    private bool restoringDraft;
+    private bool IsTemplateEditor => Navigation.Uri.TrimEnd('/').EndsWith("/training-erstellen", StringComparison.OrdinalIgnoreCase);
 
     private IEnumerable<string> Categories =>
         new[] { "Alle" }.Concat(exercises.Select(item => item.Category).Where(item => !string.IsNullOrWhiteSpace(item)).Distinct().Order());
@@ -330,38 +404,88 @@ else
 
     private IEnumerable<ExerciseDefinition> FilteredExercises => exercises
         .Where(item => selectedCategory == "Alle" || item.Category == selectedCategory)
-        .Where(item => selectedMuscleGroup == "Alle" || item.MuscleGroups.Contains(selectedMuscleGroup));
+        .Where(item => selectedMuscleGroup == "Alle" || item.MuscleGroups.Contains(selectedMuscleGroup))
+        .Where(item => string.IsNullOrWhiteSpace(exerciseSearch)
+            || item.Name.Contains(exerciseSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+            || item.Description.Contains(exerciseSearch.Trim(), StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
+        activeEditorMode = IsTemplateEditor;
+        Navigation.LocationChanged += HandleLocationChanged;
         await Database.InitializeAsync();
         exercises = await Database.GetExercisesAsync();
         currentUser = await Auth.GetCurrentUserAsync();
         await RefreshSavedWorkoutsAsync();
+        if (!IsTemplateEditor)
+        {
+            await RestoreDraftAsync();
+        }
         loading = false;
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        var editorMode = args.Location.TrimEnd('/').EndsWith("/training-erstellen", StringComparison.OrdinalIgnoreCase);
+        if (editorMode == activeEditorMode)
+        {
+            return;
+        }
+
+        activeEditorMode = editorMode;
+        libraryOpen = false;
+        selectedWorkoutId = string.Empty;
+        loadedTemplateId = null;
+        loadMessage = null;
+        saveAsGlobal = false;
+        showExerciseError = false;
+        expandedPreviewUrl = null;
+        expandedExercises.Clear();
+        selectedExercises.Clear();
+        model.Name = string.Empty;
+        model.PerformedAt = DateTime.Today;
+        model.DurationMinutes = 45;
+        model.Notes = string.Empty;
+        _ = InvokeAsync(async () =>
+        {
+            if (!editorMode)
+            {
+                await RestoreDraftAsync();
+            }
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
     }
 
     private void ToggleLibrary() => libraryOpen = !libraryOpen;
 
-    private Task LoadSelectedWorkoutAsync()
+    private async Task LoadSelectedWorkoutAsync()
     {
         var workout = savedWorkouts.FirstOrDefault(item => item.Id.ToString() == selectedWorkoutId);
         if (workout is null)
         {
             loadMessage = "Das ausgewählte Training wurde nicht gefunden.";
-            return Task.CompletedTask;
+            return;
         }
 
         model.Name = workout.Name;
         model.PerformedAt = DateTime.Today;
         model.DurationMinutes = workout.DurationMinutes;
         model.Notes = string.Empty;
+        loadedTemplateId = workout.Id;
         saveAsGlobal = currentUser.CanManageUsers && workout.Visibility == WorkoutVisibility.Global;
         selectedExercises.Clear();
         selectedExercises.AddRange(workout.Exercises.Select(CloneExercise));
+        expandedExercises.Clear();
         showExerciseError = false;
-        loadMessage = $"„{workout.Name}“ wurde als bearbeitbare Kopie geladen.";
-        return Task.CompletedTask;
+        loadMessage = IsTemplateEditor
+            ? $"Vorlage „{workout.Name}“ wurde zum Bearbeiten geladen. Speichern aktualisiert diese Vorlage."
+            : $"„{workout.Name}“ ist bereit. Passe die Werte an und schließe das Training danach ab.";
+        await PersistDraftAsync();
     }
 
     private async Task DeleteSelectedWorkoutAsync()
@@ -373,16 +497,16 @@ else
             return;
         }
 
-        await Workouts.DeleteAsync(workout.Id);
+        await Workouts.DeleteTemplateAsync(workout.Id);
         selectedWorkoutId = string.Empty;
+        loadedTemplateId = null;
         await RefreshSavedWorkoutsAsync();
-        loadMessage = $"„{workout.Name}“ wurde gelöscht.";
+        loadMessage = $"Vorlage „{workout.Name}“ wurde gelöscht.";
     }
 
     private async Task RefreshSavedWorkoutsAsync()
     {
-        var allWorkouts = await Workouts.GetAllAsync();
-        savedWorkouts = allWorkouts.Where(CanSeeWorkout).ToList();
+        savedWorkouts = await Workouts.GetTemplatesAsync();
     }
 
     private bool CanSeeWorkout(WorkoutSession workout)
@@ -432,6 +556,7 @@ else
         }
         else
         {
+            entry.Difficulty = previous?.Difficulty ?? previous?.SetEntries.FirstOrDefault()?.Difficulty ?? 5;
             entry.SetEntries = previous?.SetEntries.Count > 0
                 ? previous.SetEntries.Select(set => new ExerciseSetEntry
                 {
@@ -447,11 +572,44 @@ else
 
         selectedExercises.Add(entry);
         showExerciseError = false;
+        await PersistDraftAsync();
     }
 
-    private void RemoveExercise(ExerciseEntry exercise) => selectedExercises.Remove(exercise);
+    private async Task RemoveExercise(ExerciseEntry exercise)
+    {
+        selectedExercises.Remove(exercise);
+        expandedExercises.Remove(exercise.ExerciseId);
+        await PersistDraftAsync();
+    }
 
-    private void ClearExercises() => selectedExercises.Clear();
+    private async Task ClearExercises()
+    {
+        selectedExercises.Clear();
+        expandedExercises.Clear();
+        await PersistDraftAsync();
+    }
+
+    private async Task MoveExerciseAsync(ExerciseEntry exercise, int offset)
+    {
+        var index = selectedExercises.IndexOf(exercise);
+        var targetIndex = index + offset;
+        if (index < 0 || index >= selectedExercises.Count || targetIndex < 0 || targetIndex >= selectedExercises.Count)
+        {
+            return;
+        }
+
+        selectedExercises.RemoveAt(index);
+        selectedExercises.Insert(targetIndex, exercise);
+        await PersistDraftAsync();
+    }
+
+    private void ToggleExercise(ExerciseEntry exercise)
+    {
+        if (!expandedExercises.Add(exercise.ExerciseId))
+        {
+            expandedExercises.Remove(exercise.ExerciseId);
+        }
+    }
 
     private void ClosePreview() => expandedPreviewUrl = null;
 
@@ -467,7 +625,7 @@ else
         expandedPreviewAlt = exercise.Name;
     }
 
-    private static void AddSet(ExerciseEntry exercise)
+    private async Task AddSet(ExerciseEntry exercise)
     {
         if (exercise.SetEntries.Count >= 20)
         {
@@ -479,8 +637,9 @@ else
         {
             Repetitions = previous?.Repetitions ?? 10,
             WeightKg = previous?.WeightKg ?? 0,
-            Difficulty = previous?.Difficulty ?? 5
+            Difficulty = exercise.Difficulty
         });
+        await PersistDraftAsync();
     }
 
     private static ExerciseEntry CloneExercise(ExerciseEntry exercise) => new()
@@ -513,11 +672,60 @@ else
         || exercise.MuscleGroups.Contains("Ausdauer", StringComparer.OrdinalIgnoreCase)
         || string.Equals(exercise.MuscleGroup, "Ausdauer", StringComparison.OrdinalIgnoreCase);
 
-    private static void RemoveSet(ExerciseEntry exercise, ExerciseSetEntry set)
+    private async Task RemoveSet(ExerciseEntry exercise, ExerciseSetEntry set)
     {
         if (exercise.SetEntries.Count > 1)
         {
             exercise.SetEntries.Remove(set);
+            await PersistDraftAsync();
+        }
+    }
+
+    private async Task PersistDraftAsync()
+    {
+        if (IsTemplateEditor || loading || restoringDraft)
+        {
+            return;
+        }
+
+        var draft = new WorkoutDraftState
+        {
+            Name = model.Name,
+            PerformedAt = model.PerformedAt,
+            DurationMinutes = model.DurationMinutes,
+            Notes = model.Notes,
+            SelectedWorkoutId = selectedWorkoutId,
+            LoadedTemplateId = loadedTemplateId,
+            Exercises = selectedExercises.Select(CloneExercise).ToList()
+        };
+        await Database.SaveTrainingDraftAsync(draft);
+    }
+
+    private async Task RestoreDraftAsync()
+    {
+        restoringDraft = true;
+        try
+        {
+            var draft = await Database.GetTrainingDraftAsync();
+            if (draft is null || draft.Exercises.Count == 0)
+            {
+                return;
+            }
+
+            model.Name = draft.Name;
+            model.PerformedAt = draft.PerformedAt;
+            model.DurationMinutes = draft.DurationMinutes;
+            model.Notes = draft.Notes;
+            selectedWorkoutId = draft.SelectedWorkoutId;
+            loadedTemplateId = draft.LoadedTemplateId;
+            selectedExercises.Clear();
+            selectedExercises.AddRange(draft.Exercises.Select(CloneExercise));
+            expandedExercises.Clear();
+            loadMessage = $"Dein nicht abgeschlossenes Training „{draft.Name}“ wurde wiederhergestellt.";
+        }
+        finally
+        {
+            restoringDraft = false;
         }
     }
 
@@ -543,7 +751,7 @@ else
             {
                 ExerciseTypes.Endurance => item.DurationMinutes is < 1 or > 1440 || item.DistanceKm is < 0 or > 10000 || item.ElevationMeters is < 0 or > 100000 || item.Difficulty is < 1 or > 10,
                 _ when UsesDuration(item) => item.DurationMinutes is < 1 or > 1440 || item.Difficulty is < 1 or > 10,
-                _ => item.SetEntries.Count is < 1 or > 20 || item.SetEntries.Any(set => set.Repetitions is < 1 or > 100 || set.WeightKg is < 0 or > 1000 || set.Difficulty is < 1 or > 10)
+                _ => item.Difficulty is < 1 or > 10 || item.SetEntries.Count is < 1 or > 20 || item.SetEntries.Any(set => set.Repetitions is < 1 or > 100 || set.WeightKg is < 0 or > 1000)
             }))
         {
             showExerciseError = true;
@@ -561,18 +769,38 @@ else
             exercise.Sets = exercise.SetEntries.Count;
             exercise.Repetitions = exercise.SetEntries[0].Repetitions;
             exercise.WeightKg = exercise.SetEntries[0].WeightKg;
+            foreach (var set in exercise.SetEntries)
+            {
+                set.Difficulty = exercise.Difficulty;
+            }
         }
 
-        await Workouts.AddAsync(new WorkoutSession
+        var workout = new WorkoutSession
         {
+            Id = IsTemplateEditor && loadedTemplateId.HasValue ? loadedTemplateId.Value : Guid.NewGuid(),
             Name = model.Name.Trim(),
             OwnerUserName = currentUser.AuthenticationMode == "Sql" ? currentUser.UserName : null,
             Visibility = currentUser.CanManageUsers && saveAsGlobal ? WorkoutVisibility.Global : WorkoutVisibility.Personal,
             PerformedAt = model.PerformedAt,
             DurationMinutes = model.DurationMinutes,
             Notes = model.Notes.Trim(),
-            Exercises = selectedExercises.Select(CloneExercise).ToList()
-        });
+            Exercises = selectedExercises.Select(CloneExercise).ToList(),
+            IsTemplate = IsTemplateEditor
+        };
+
+        if (IsTemplateEditor)
+        {
+            var saved = await Workouts.SaveTemplateAsync(workout);
+            loadedTemplateId = saved.Id;
+            selectedWorkoutId = saved.Id.ToString();
+            await RefreshSavedWorkoutsAsync();
+            loadMessage = $"Vorlage „{saved.Name}“ wurde in SQL gespeichert.";
+            saving = false;
+            return;
+        }
+
+        await Workouts.AddAsync(workout);
+        await Database.ClearTrainingDraftAsync();
         Navigation.NavigateTo("/");
     }
 }

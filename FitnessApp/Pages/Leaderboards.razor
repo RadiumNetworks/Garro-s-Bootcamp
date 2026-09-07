@@ -1,0 +1,76 @@
+@page "/ranglisten"
+@inject AuthService Auth
+
+<PageTitle>Ranglisten</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Gemeinsam motiviert</span>
+    <h1>Top 10 Ranglisten</h1>
+    <p>Es erscheinen ausschließlich Nutzer, die ihren Anzeigenamen ausdrücklich freigegeben haben.</p>
+</header>
+
+@if (loading)
+{
+    <section class="app-card empty-state">Ranglisten werden geladen …</section>
+}
+else if (categories.Count == 0)
+{
+    <section class="app-card empty-state"><h2>Noch keine Rangliste aktiv</h2><p>Ein Administrator kann Kategorien freischalten.</p></section>
+}
+else
+{
+    <div class="leaderboard-tabs" role="tablist" aria-label="Ranglistenkategorien">
+        @foreach (var category in categories)
+        {
+            <button type="button" class="filter-chip @(selectedKey == category.CategoryKey ? "active" : null)" @onclick="() => SelectAsync(category.CategoryKey)">@category.DisplayName</button>
+        }
+    </div>
+
+    <section class="app-card leaderboard-card">
+        <span class="eyebrow">Aktuelle Wertung</span>
+        <h2>@SelectedCategory?.DisplayName</h2>
+        <p>@SelectedCategory?.Description</p>
+        @if (entries.Count == 0)
+        {
+            <div class="empty-state"><p>Noch keine öffentlich freigegebenen Ergebnisse vorhanden.</p></div>
+        }
+        else
+        {
+            <div class="leaderboard-list">
+                @foreach (var entry in entries)
+                {
+                    <div class="leaderboard-row">
+                        <strong class="leaderboard-rank">@entry.Position</strong>
+                        <span>@entry.DisplayName</span>
+                        <strong>@FormatValue(entry.Value) @SelectedCategory?.Unit</strong>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<LeaderboardCategory> categories = [];
+    private IReadOnlyList<LeaderboardEntry> entries = [];
+    private string selectedKey = string.Empty;
+    private bool loading = true;
+    private LeaderboardCategory? SelectedCategory => categories.FirstOrDefault(item => item.CategoryKey == selectedKey);
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Auth.GetLeaderboardCategoriesAsync();
+        if (categories.Count > 0) await SelectAsync(categories[0].CategoryKey);
+        loading = false;
+    }
+
+    private async Task SelectAsync(string categoryKey)
+    {
+        selectedKey = categoryKey;
+        entries = await Auth.GetLeaderboardAsync(categoryKey);
+    }
+
+    private string FormatValue(decimal value) => selectedKey is "weekly-running-distance"
+        ? value.ToString("0.##")
+        : value.ToString("0");
+}

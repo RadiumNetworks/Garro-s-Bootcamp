@@ -1,21 +1,53 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "Garro's Bootcamp: Build",
-      "type": "shell",
-      "command": "dotnet",
-      "args": ["build", "${workspaceFolder}/FitTrack.sln"],
-      "group": { "kind": "build", "isDefault": true },
-      "problemMatcher": "$msCompile"
-    },
-    {
-      "label": "Garro's Bootcamp: Start",
-      "type": "shell",
-      "command": "dotnet",
-      "args": ["run", "--project", "${workspaceFolder}/Server/FitTrack.Server.csproj"],
-      "isBackground": true,
-      "problemMatcher": "$msCompile"
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Garro's Bootcamp: Build",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"${workspaceFolder}/FitTrack.sln"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "Garro's Bootcamp: Start",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"run",
+				"--project",
+				"${workspaceFolder}/Server/FitTrack.Server.csproj"
+			],
+			"isBackground": true,
+			"problemMatcher": "$msCompile"
+		},
+		{
+			"label": "FitTrack: Publish Azure Windows",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"publish",
+				".\\Server\\FitTrack.Server.csproj",
+				"-c",
+				"Release",
+				"-r",
+				"win-x64",
+				"--self-contained",
+				"true",
+				"-o",
+				"${env:TEMP}\\FitTrack\\publish"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		}
+	]
 }

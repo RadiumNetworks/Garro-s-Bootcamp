@@ -17,6 +17,8 @@ public sealed class WorkoutSession
 
     public string Visibility { get; set; } = WorkoutVisibility.Personal;
 
+    public bool IsTemplate { get; set; }
+
     [Range(1, 600)]
     public int DurationMinutes { get; set; } = 45;
 
@@ -54,4 +56,15 @@ public sealed class ExerciseSetEntry
     public int Repetitions { get; set; } = 10;
     public decimal WeightKg { get; set; }
     public int Difficulty { get; set; } = 5;
+}
+
+public sealed class WorkoutDraftState
+{
+    public string Name { get; set; } = string.Empty;
+    public DateTime PerformedAt { get; set; } = DateTime.Today;
+    public int DurationMinutes { get; set; } = 45;
+    public string Notes { get; set; } = string.Empty;
+    public string SelectedWorkoutId { get; set; } = string.Empty;
+    public Guid? LoadedTemplateId { get; set; }
+    public List<ExerciseEntry> Exercises { get; set; } = [];
 }

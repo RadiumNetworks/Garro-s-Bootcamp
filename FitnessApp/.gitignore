@@ -1,0 +1,16 @@
+# .NET build outputs
+**/bin/
+**/obj/
+
+# Visual Studio / VS Code local state
+.vs/
+.vscode/*.user.json
+
+# Local Azure deployment configuration
+infra/config/*.local.json
+
+# Local secrets and deployment artifacts
+.env
+.env.*
+*.publishsettings
+artifacts/

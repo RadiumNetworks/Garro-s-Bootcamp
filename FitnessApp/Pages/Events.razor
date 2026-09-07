@@ -1,0 +1,74 @@
+@page "/ziele"
+@inject AuthService Auth
+
+<PageTitle>Ziele & Events</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Deine Motivation</span>
+    <h1>Ziele & Events</h1>
+    <p>Plane Wettkämpfe, Laufevents und persönliche Meilensteine.</p>
+</header>
+
+@if (loading)
+{
+    <section class="app-card empty-state">Ziele werden geladen …</section>
+}
+else if (!currentUser.IsAuthenticated || currentUser.AuthenticationMode != "Sql")
+{
+    <section class="app-card empty-state"><h2>Anmeldung erforderlich</h2><p>Persönliche Ziele werden sicher in deinem Benutzerkonto gespeichert.</p></section>
+}
+else
+{
+    <div class="event-layout">
+        <EditForm Model="model" OnValidSubmit="SaveAsync" class="app-card form-card event-form">
+            <DataAnnotationsValidator />
+            <h2>@(model.EventId == Guid.Empty ? "Neues Ziel" : "Ziel bearbeiten")</h2>
+            <div class="form-grid">
+                <div class="field field-wide"><label for="eventTitle">Titel</label><InputText id="eventTitle" @bind-Value="model.Title" /><ValidationMessage For="@(() => model.Title)" /></div>
+                <div class="field"><label for="eventType">Typ</label><InputSelect id="eventType" @bind-Value="model.EventType"><option value="Competition">Wettkampf</option><option value="Running">Laufevent</option><option value="PersonalGoal">Persönliches Ziel</option><option value="Other">Sonstiges</option></InputSelect></div>
+                <div class="field"><label for="eventDate">Datum</label><InputDate id="eventDate" @bind-Value="model.EventDate" /></div>
+                <div class="field field-wide"><label for="eventDescription">Beschreibung</label><InputTextArea id="eventDescription" @bind-Value="model.Description" /></div>
+                <label class="visibility-toggle field-wide"><InputCheckbox @bind-Value="model.IsCompleted" /><span><strong>Als abgeschlossen markieren</strong><small>Das Ziel wandert in deine Historie.</small></span></label>
+            </div>
+            <div class="form-actions"><button type="submit" class="app-button btn-primary">Speichern</button>@if (model.EventId != Guid.Empty) { <button type="button" class="app-button secondary" @onclick="NewEvent">Abbrechen</button> }</div>
+            @if (!string.IsNullOrWhiteSpace(message)) { <p class="save-message">@message</p> }
+        </EditForm>
+
+        <section class="event-list">
+            @if (events.Count == 0)
+            {
+                <div class="app-card empty-state"><h2>Noch keine Ziele</h2><p>Lege dein erstes wichtiges Ereignis an.</p></div>
+            }
+            @foreach (var item in events)
+            {
+                <article class="app-card event-card @(item.IsCompleted ? "completed" : null)">
+                    <div><span class="eyebrow">@TypeLabel(item.EventType)</span><h2>@item.Title</h2><p>@item.EventDate.ToString("dd.MM.yyyy") · @Countdown(item)</p>@if (!string.IsNullOrWhiteSpace(item.Description)) { <small>@item.Description</small> }</div>
+                    <div class="event-actions"><button type="button" class="app-button secondary" @onclick="() => Edit(item)">Bearbeiten</button><button type="button" class="app-button danger" @onclick="() => DeleteAsync(item)">Löschen</button></div>
+                </article>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private CurrentUserState currentUser = new();
+    private IReadOnlyList<UserEvent> events = [];
+    private UserEvent model = NewModel();
+    private bool loading = true;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await Auth.GetCurrentUserAsync();
+        if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated) await RefreshAsync();
+        loading = false;
+    }
+    private async Task RefreshAsync() => events = await Auth.GetEventsAsync();
+    private async Task SaveAsync() { var saved=await Auth.SaveEventAsync(model); message=$"„{saved.Title}“ wurde gespeichert."; NewEvent(); await RefreshAsync(); }
+    private async Task DeleteAsync(UserEvent item) { await Auth.DeleteEventAsync(item.EventId); await RefreshAsync(); message=$"„{item.Title}“ wurde gelöscht."; }
+    private void Edit(UserEvent item) => model = new UserEvent { EventId=item.EventId, Title=item.Title, EventType=item.EventType, EventDate=item.EventDate, Description=item.Description, IsCompleted=item.IsCompleted };
+    private void NewEvent() => model = NewModel();
+    private static UserEvent NewModel() => new() { EventDate=DateTime.Today.AddDays(30) };
+    private static string TypeLabel(string type) => type switch { "Competition"=>"Wettkampf", "Running"=>"Laufevent", "PersonalGoal"=>"Persönliches Ziel", _=>"Sonstiges" };
+    private static string Countdown(UserEvent item) { if(item.IsCompleted) return "Abgeschlossen"; var days=(item.EventDate.Date-DateTime.Today).Days; return days switch { 0=>"Heute", 1=>"Noch 1 Tag", >1=>$"Noch {days} Tage", -1=>"Seit 1 Tag fällig", _=>$"Seit {-days} Tagen fällig" }; }
+}

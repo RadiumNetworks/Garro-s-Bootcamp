@@ -49,3 +49,20 @@ public sealed class CreateUserModel
 public sealed record CreateUserRequest(string UserName, string Password, string Role);
 public sealed record LoginRequest(string UserName, string Password);
 public sealed record UpdateDisplayNameRequest(string DisplayName);
+public sealed record UserProfile(int WeeklyGoal = 3, bool IsLeaderboardPublic = false);
+public sealed record UpdateUserProfileRequest(int WeeklyGoal, bool IsLeaderboardPublic);
+public sealed record WeeklyStats(DateTime WeekStart, int SessionCount, int WeeklyGoal, bool GoalReached, int CurrentStreak, int LongestStreak);
+public sealed record LeaderboardCategory(string CategoryKey, string DisplayName, string Description, string Unit, bool IsEnabled, int SortOrder);
+public sealed record LeaderboardEntry(int Position, string DisplayName, decimal Value);
+public sealed class UserEvent
+{
+    public Guid EventId { get; set; }
+    [Required(ErrorMessage = "Bitte gib einen Titel ein.")]
+    [StringLength(160)]
+    public string Title { get; set; } = string.Empty;
+    public string EventType { get; set; } = "PersonalGoal";
+    public DateTime EventDate { get; set; } = DateTime.Today.AddDays(30);
+    [StringLength(1000)]
+    public string Description { get; set; } = string.Empty;
+    public bool IsCompleted { get; set; }
+}

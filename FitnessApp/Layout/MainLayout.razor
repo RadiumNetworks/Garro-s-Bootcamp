@@ -18,7 +18,9 @@
             }
             else if (RequiresLogin)
             {
-                <EditForm Model="login" OnValidSubmit="LoginAsync" class="app-card form-card auth-gate-card">
+                <div class="auth-gate-layout">
+                    <img class="auth-gate-image" src="/media/NoPainNoGain.png?v=20260907b" alt="No Pain No Gain" />
+                    <EditForm Model="login" OnValidSubmit="LoginAsync" class="app-card form-card auth-gate-card">
                     <DataAnnotationsValidator />
                     <span class="eyebrow">SQL-Authentifizierung</span>
                     <h1>Anmelden</h1>
@@ -40,7 +42,8 @@
                     {
                         <p class="form-error" role="alert">@loginError</p>
                     }
-                </EditForm>
+                    </EditForm>
+                </div>
             }
             else
             {

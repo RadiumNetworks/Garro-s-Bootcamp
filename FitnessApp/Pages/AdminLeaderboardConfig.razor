@@ -1,0 +1,76 @@
+@page "/ranglisten-verwalten"
+@inject AuthService Auth
+
+<PageTitle>Ranglisten verwalten</PageTitle>
+
+<header class="page-header">
+    <span class="eyebrow">Administration</span>
+    <h1>Ranglisten verwalten</h1>
+    <p>Aktiviere feste, geprüfte Metriken und passe deren Darstellung an.</p>
+</header>
+
+@if (loading)
+{
+    <section class="app-card empty-state">Konfiguration wird geladen …</section>
+}
+else if (!currentUser.CanManageUsers)
+{
+    <section class="app-card empty-state"><h2>Kein Zugriff</h2><p>Diese Seite ist nur für Administratoren verfügbar.</p></section>
+}
+else
+{
+    <div class="admin-category-list">
+        @foreach (var category in categories)
+        {
+            <EditForm Model="category" OnValidSubmit="() => SaveAsync(category)" class="app-card form-card admin-category-card">
+                <div class="form-grid">
+                    <label class="visibility-toggle field-wide">
+                        <InputCheckbox @bind-Value="category.IsEnabled" />
+                        <span><strong>@category.CategoryKey</strong><small>Kategorie öffentlich anzeigen</small></span>
+                    </label>
+                    <div class="field field-wide"><label>Anzeigename</label><InputText @bind-Value="category.DisplayName" /></div>
+                    <div class="field field-wide"><label>Beschreibung</label><InputTextArea @bind-Value="category.Description" /></div>
+                    <div class="field"><label>Einheit</label><InputText @bind-Value="category.Unit" /></div>
+                    <div class="field"><label>Reihenfolge</label><InputNumber @bind-Value="category.SortOrder" /></div>
+                </div>
+                <button type="submit" class="app-button btn-primary">Speichern</button>
+            </EditForm>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="save-message">@message</p> }
+}
+
+@code {
+    private CurrentUserState currentUser = new();
+    private List<EditableCategory> categories = [];
+    private bool loading = true;
+    private string? message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await Auth.GetCurrentUserAsync();
+        if (currentUser.CanManageUsers)
+            categories = (await Auth.GetLeaderboardCategoriesAsync(admin: true)).Select(item => new EditableCategory(item)).ToList();
+        loading = false;
+    }
+
+    private async Task SaveAsync(EditableCategory item)
+    {
+        var saved = await Auth.UpdateLeaderboardCategoryAsync(item.ToRecord());
+        item.Apply(saved);
+        message = $"„{saved.DisplayName}“ wurde gespeichert.";
+    }
+
+    private sealed class EditableCategory
+    {
+        public EditableCategory(LeaderboardCategory source) => Apply(source);
+        public string CategoryKey { get; private set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string Unit { get; set; } = string.Empty;
+        public bool IsEnabled { get; set; }
+        public int SortOrder { get; set; }
+        public void Apply(LeaderboardCategory source) { CategoryKey=source.CategoryKey; DisplayName=source.DisplayName; Description=source.Description; Unit=source.Unit; IsEnabled=source.IsEnabled; SortOrder=source.SortOrder; }
+        public LeaderboardCategory ToRecord() => new(CategoryKey, DisplayName, Description, Unit, IsEnabled, SortOrder);
+    }
+}

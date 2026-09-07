@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
-    <DefaultItemExcludes>$(DefaultItemExcludes);Server\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);Server\**;artifacts\**;tools\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

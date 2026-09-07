@@ -8,7 +8,7 @@
 <header class="page-header">
     <span class="eyebrow">Garro's Bootcamp anpassen</span>
     <h1>Einstellungen</h1>
-    <p>Trainingsdaten und Einstellungen bleiben lokal gespeichert; im SQL-Modus wird dein Anzeigename im Benutzerkonto abgelegt.</p>
+    <p>Im SQL-Modus werden Anzeigename und Wochenziel geräteübergreifend im Benutzerkonto gespeichert; ohne Anmeldung bleiben die Einstellungen lokal.</p>
 </header>
 
 <EditForm Model="settings" OnValidSubmit="SaveAsync" class="app-card form-card">
@@ -24,11 +24,25 @@
             <InputNumber id="goal" @bind-Value="settings.WeeklyGoal" />
             <ValidationMessage For="@(() => settings.WeeklyGoal)" />
         </div>
+        @if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+        {
+            <label class="visibility-toggle field-wide" for="leaderboardPublic">
+                <InputCheckbox id="leaderboardPublic" @bind-Value="leaderboardPublic" />
+                <span>
+                    <strong>Anzeigename in Ranglisten veröffentlichen</strong>
+                    <small>Standardmäßig privat. Nur nach deiner Freigabe dürfen dein Anzeigename und deine Ranglistenwerte öffentlich erscheinen. Dein Benutzername bleibt verborgen.</small>
+                </span>
+            </label>
+        }
     </div>
     <button class="app-button btn-primary" type="submit">Einstellungen speichern</button>
     @if (saved)
     {
         <span class="save-message">Gespeichert ✓</span>
+    }
+    @if (!string.IsNullOrWhiteSpace(saveError))
+    {
+        <p class="form-error" role="alert">@saveError</p>
     }
 </EditForm>
 
@@ -43,7 +57,10 @@
 @code {
     private UserSettings settings = new();
     private CurrentUserState currentUser = new();
+    private UserProfile userProfile = new();
+    private bool leaderboardPublic;
     private bool saved;
+    private string? saveError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -52,17 +69,31 @@
         if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
         {
             settings.DisplayName = string.IsNullOrWhiteSpace(currentUser.DisplayName) ? currentUser.UserName ?? settings.DisplayName : currentUser.DisplayName;
+            userProfile = await Auth.GetUserProfileAsync();
+            settings.WeeklyGoal = userProfile.WeeklyGoal;
+            leaderboardPublic = userProfile.IsLeaderboardPublic;
         }
     }
 
     private async Task SaveAsync()
     {
-        await SettingsStore.SaveAsync(settings);
-        if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+        saved = false;
+        saveError = null;
+        try
         {
-            await Auth.UpdateDisplayNameAsync(settings.DisplayName.Trim());
+            if (currentUser.AuthenticationMode == "Sql" && currentUser.IsAuthenticated)
+            {
+                await Auth.UpdateDisplayNameAsync(settings.DisplayName.Trim());
+                userProfile = await Auth.UpdateUserProfileAsync(new UserProfile(settings.WeeklyGoal, leaderboardPublic));
+            }
+
+            await SettingsStore.SaveAsync(settings);
+            saved = true;
         }
-        saved = true;
+        catch (Exception exception)
+        {
+            saveError = exception.Message;
+        }
     }
 
     private async Task ResetAsync()
